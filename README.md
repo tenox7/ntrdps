@@ -1,6 +1,8 @@
 # ntrdps
 
 An RDP server for the console of Windows NT 3.1, 3.5, 3.51 and 4.0 (x86).
+It is for pre-TSE NT (before Terminal Server Edition): an RDP client connects to WinStation 0,
+the console, so it is console only and not multi-user.
 
 **No encryption and no login.** Anyone who can reach TCP port 3389 gets the console.
 Use it only on a network you trust. Tested in QEMU only, not yet on real hardware.
