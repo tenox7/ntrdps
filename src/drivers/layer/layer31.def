@@ -1,0 +1,8 @@
+; ntrdps - RDP console server for Windows NT
+; Copyright (c) 2026 ntrdps authors. MIT License, see LICENSE.
+
+LIBRARY ntrdpsly
+
+EXPORTS
+    DrvEnableDriver
+    DrvDisableDriver

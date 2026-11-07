@@ -1,0 +1,10 @@
+; ntrdps - RDP console server for Windows NT
+; Copyright (c) 2026 ntrdps authors. MIT License, see LICENSE.
+
+LIBRARY ntrdpshk
+
+EXPORTS
+    HookStart
+    HookStop
+    HookCursor
+    HookHints

@@ -1,0 +1,9 @@
+; ntrdps - RDP console server for Windows NT
+; Copyright (c) 2026 ntrdps authors. MIT License, see LICENSE.
+
+LIBRARY WIN32K.SYS
+
+EXPORTS
+    EngMapEvent
+    EngUnmapEvent
+    EngSetEvent

@@ -1,0 +1,10 @@
+out/
+.build/
+*.obj
+*.res
+*.rbj
+*.exp
+*.lib
+*.exe
+*.dll
+*.sys

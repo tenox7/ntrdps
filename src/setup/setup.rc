@@ -1,0 +1,37 @@
+/* ntrdps - RDP console server for Windows NT
+ * Copyright (c) 2026 ntrdps authors. MIT License, see LICENSE. */
+
+#include <windows.h>
+#include "setup.h"
+
+#ifndef DS_3DLOOK
+#define DS_3DLOOK 0x0004L
+#endif
+
+IDF_EXE31   NTRDPSFILE  "setup\\nt31\\ntrdps.exe"
+IDF_HOOK31  NTRDPSFILE  "setup\\nt31\\ntrdpshk.dll"
+IDF_LAYER31 NTRDPSFILE  "setup\\nt31\\ntrdpsly.dll"
+IDF_EXE35   NTRDPSFILE  "setup\\nt35\\ntrdps.exe"
+IDF_HOOK35  NTRDPSFILE  "setup\\nt35\\ntrdpshk.dll"
+IDF_LAYER35 NTRDPSFILE  "setup\\nt35\\ntrdpsly.dll"
+IDF_MRSYS   NTRDPSFILE  "setup\\nt40\\ntrdpsmr.sys"
+IDF_MRDLL   NTRDPSFILE  "setup\\nt40\\ntrdpsmr.dll"
+IDF_MRDLL0  NTRDPSFILE  "setup\\nt40\\ntrdpsm0.dll"
+
+IDD_SETUP DIALOG 0, 0, 268, 202
+STYLE DS_MODALFRAME | DS_3DLOOK | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "ntrdps Setup"
+FONT 8, "MS Sans Serif"
+BEGIN
+    LTEXT           "ntrdps lets RDP clients (Remote Desktop) use the console of this computer.",
+                    -1, 8, 6, 252, 10
+    LTEXT           "No encryption and no login: anyone who can reach TCP port 3389 gets the console. Use it only on a network you trust.",
+                    -1, 8, 18, 252, 18
+    GROUPBOX        "Install will", -1, 4, 40, 260, 92
+    LTEXT           "", IDC_PLAN, 10, 52, 248, 76
+    GROUPBOX        "Now", -1, 4, 136, 260, 40
+    LTEXT           "", IDC_STATUS, 10, 148, 248, 26
+    DEFPUSHBUTTON   "&Install", IDC_INSTALL, 51, 182, 50, 14
+    PUSHBUTTON      "&Remove", IDC_REMOVE, 109, 182, 50, 14
+    PUSHBUTTON      "Close", IDCANCEL, 167, 182, 50, 14
+END
