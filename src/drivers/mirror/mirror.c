@@ -30,6 +30,7 @@ static volatile LONG    g_inuse;
 #endif
 
 #ifndef MR_RTM
+#ifdef _X86_
 static void mr_inuse_inc(void)
 {
     __asm lock inc dword ptr g_inuse
@@ -47,6 +48,30 @@ static void mr_event_clear(void)
         xchg eax, g_event
     }
 }
+#else
+static HSEMAPHORE       g_sem;
+
+static void mr_inuse_inc(void)
+{
+    EngAcquireSemaphore(g_sem);
+    g_inuse++;
+    EngReleaseSemaphore(g_sem);
+}
+
+static void mr_inuse_dec(void)
+{
+    EngAcquireSemaphore(g_sem);
+    g_inuse--;
+    EngReleaseSemaphore(g_sem);
+}
+
+static void mr_event_clear(void)
+{
+    EngAcquireSemaphore(g_sem);
+    g_event = NULL;
+    EngReleaseSemaphore(g_sem);
+}
+#endif
 #endif
 
 static void mr_std_palette(ULONG bpp)
@@ -792,6 +817,14 @@ BOOL APIENTRY DrvEnableDriver(ULONG iEngineVersion, ULONG cj,
     if (pded == NULL || cj < sizeof(DRVENABLEDATA)) {
         return FALSE;
     }
+#if !defined(MR_RTM) && !defined(_X86_)
+    if (g_sem == NULL) {
+        g_sem = EngCreateSemaphore();
+        if (g_sem == NULL) {
+            return FALSE;
+        }
+    }
+#endif
     g_engine = iEngineVersion;
 #ifdef MR_RTM
     pded->iDriverVersion = MR_DDI_RTM;

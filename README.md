@@ -1,6 +1,7 @@
 # ntrdps
 
-An RDP server for the console of Windows NT 3.1, 3.5, 3.51 and 4.0 (x86).
+An RDP server for the console of Windows NT 3.1, 3.5, 3.51 and 4.0,
+on Intel x86, MIPS, Alpha and PowerPC.
 It is for pre-TSE NT (before Terminal Server Edition): an RDP client connects to WinStation 0,
 the console, so it is console only and not multi-user.
 
@@ -9,15 +10,23 @@ Use it only on a network you trust. Tested in QEMU only, not yet on real hardwar
 
 ## Install
 
-1. Download `ntrdpset.exe` from [Releases](https://github.com/tenox7/ntrdps/releases).
+1. Download the installer for your CPU from [Releases](https://github.com/tenox7/ntrdps/releases).
+   It finds the NT version itself.
 2. Log on as an administrator and run it.
 3. Click **Install**. Let it restart Windows NT.
+
+| CPU | Installer | Tested on |
+|---|---|---|
+| Intel x86 | `ntrdpset-i386.exe` | NT 3.1, 3.5, 3.51, 4.0 |
+| MIPS | `ntrdpset-mips.exe` | NT 3.1, 3.51, 4.0 |
+| Alpha | `ntrdpset-alpha.exe` | NT 3.1, 3.51, 4.0 |
+| PowerPC | `ntrdpset-ppc.exe` | NT 3.51, 4.0 |
 
 It copies the files to `C:\NTRDPS`, adds the service `ntrdps` and the display driver,
 and starts the service. **Remove** takes all of it away again.
 
 If Windows NT does not start after the restart: choose "Last Known Good" at boot.
-That undoes the install. Then run `ntrdpset.exe` again and click **Remove**.
+That undoes the install. Then run the installer again and click **Remove**.
 
 In a batch file: `ntrdpset /install /q` (or `/remove`, `/status`). ERRORLEVEL: 0 done,
 1 not an administrator, 2 failed, 3 nothing to remove.
@@ -47,6 +56,21 @@ With nmake, in a Command Prompt with the compiler's environment set:
 | Installer `ntrdpset.exe` | NT 3.1 SDK | `src` | `nmake -f setup.mak` |
 
 The drivers look for the DDK in `C:\DDK`. Another folder: add `DDKROOT=D:\NTDDK` (for example).
+
+MIPS, Alpha and PowerPC: the same in a Command Prompt on that machine. Add `CPU=MIPS`,
+`CPU=ALPHA` or `CPU=PPC` to each command.
+
+| What | Compiler | Folder | Command |
+|---|---|---|---|
+| ntrdps for NT 3.1 | NT 3.1 SDK | `src` | `nmake -f risc31.mak` |
+| ntrdps for NT 3.5, 3.51, 4.0 | Visual C++ 4.1 | `src` | `nmake -f risc35.mak` |
+| Driver for NT 3.1 | NT 3.1 SDK, NT 3.1 DDK | `src\drivers` | `nmake -f risc31d.mak` |
+| Driver for NT 3.5, 3.51 | Visual C++ 4.1, NT 3.51 DDK | `src\drivers` | `nmake -f risc351d.mak` |
+| Drivers for NT 4.0 | Visual C++ 4.1, NT 4.0 SDK and DDK | `src\drivers` | `nmake -f risc40d.mak` |
+| Installer, MIPS and Alpha | NT 3.1 SDK | `src` | `nmake -f rsetup31.mak` |
+| Installer, PowerPC | Visual C++ 4.1 | `src` | `nmake -f rsetup35.mak` |
+
+There is no NT 3.1 for PowerPC, so its installer has no `nt31` files.
 
 The installer packs the files of the other builds. Copy them to `src\setup` first:
 

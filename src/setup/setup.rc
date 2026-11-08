@@ -8,9 +8,11 @@
 #define DS_3DLOOK 0x0004L
 #endif
 
+#ifndef NO_NT31
 IDF_EXE31   NTRDPSFILE  "setup\\nt31\\ntrdps.exe"
 IDF_HOOK31  NTRDPSFILE  "setup\\nt31\\ntrdpshk.dll"
 IDF_LAYER31 NTRDPSFILE  "setup\\nt31\\ntrdpsly.dll"
+#endif
 IDF_EXE35   NTRDPSFILE  "setup\\nt35\\ntrdps.exe"
 IDF_HOOK35  NTRDPSFILE  "setup\\nt35\\ntrdpshk.dll"
 IDF_LAYER35 NTRDPSFILE  "setup\\nt35\\ntrdpsly.dll"

@@ -14,6 +14,7 @@ CFLAGS   = -nologo -c -Zel -Zp8 -W3 -Gz -H63 -G4 -Ox -Oy \
 LINK     = link32
 LFLAGS   = -debug:minimal -debugtype:coff -machine:i386 -align:0x1000
 IMPLIB   = lib32 -machine:i386
+CVTRES   = cvtres -i386
 
 DISPDLL_FLAGS = -dll -subsystem:native
 DISPDLL_LIBS  = kernel32.lib $(DDKLIB)\winsrv.lib

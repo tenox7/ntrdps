@@ -9,8 +9,10 @@ CFLAGS_DLL = $(CFLAGS) -Zl
 LINK      = link32
 LFLAGS    = -align:0x1000
 IMPLIB    = lib32 -machine:i386
+CVTRES    = cvtres -i386
 
 EXE_CON   = -subsystem:console -entry:mainCRTStartup
+EXE_GUI   = -subsystem:windows -entry:WinMainCRTStartup
 LIBS_MT   = libcmt.lib kernel32.lib
 
 DLL_FLAGS = -dll -subsystem:windows -entry:DllMain@12

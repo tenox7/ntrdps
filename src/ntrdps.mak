@@ -50,7 +50,8 @@ ntrdpshk.exp: hook\hook.obj hook\ntrdpshk.def
 
 ntrdpshk.dll: hook\hook.obj ntrdpshk.exp
 	$(LINK) $(LFLAGS) $(DLL_FLAGS) -base:0x6E200000 -section:.shared,rws \
-	    -out:ntrdpshk.dll ntrdpshk.exp hook\hook.obj user32.lib kernel32.lib
+	    -out:ntrdpshk.dll ntrdpshk.exp hook\hook.obj user32.lib kernel32.lib \
+	    $(DLL_RTLIB)
 
 tests\t_stream.exe: tests\t_stream.obj rdp\stream.obj
 	$(LINK) $(LFLAGS) $(EXE_CON) -out:$@ tests\t_stream.obj rdp\stream.obj $(LIBS_MT)

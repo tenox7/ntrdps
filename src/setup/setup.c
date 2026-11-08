@@ -51,9 +51,11 @@ typedef struct {
 } PACKED;
 
 static PACKED g_files[] = {
+#ifndef NO_NT31
     { IDF_EXE31,   "ntrdps.exe",   V31 },
     { IDF_HOOK31,  "ntrdpshk.dll", V31 },
     { IDF_LAYER31, "ntrdpsly.dll", V31 },
+#endif
     { IDF_EXE35,   "ntrdps.exe",   V35 | V40 },
     { IDF_HOOK35,  "ntrdpshk.dll", V35 | V40 },
     { IDF_LAYER35, "ntrdpsly.dll", V35 },
@@ -111,9 +113,11 @@ static int nt_version(void)
     if (v & 0x80000000UL) {
         return 0;
     }
+#ifndef NO_NT31
     if (major == 3 && minor == 10) {
         return V31;
     }
+#endif
     if (major == 3 && (minor == 50 || minor == 51)) {
         return V35;
     }

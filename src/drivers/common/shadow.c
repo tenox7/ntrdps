@@ -163,6 +163,7 @@ static void mr_count_read(SURFOBJ *psoSrc, MR_PDEV *ppdevDst)
     }
 }
 
+#ifdef _X86_
 void mr_copy(PVOID dst, const VOID *src, ULONG cb)
 {
     __asm {
@@ -177,6 +178,22 @@ void mr_copy(PVOID dst, const VOID *src, ULONG cb)
         rep     movsb
     }
 }
+#else
+void mr_copy(PVOID dst, const VOID *src, ULONG cb)
+{
+    BYTE       *d = (BYTE *) dst;
+    const BYTE *s = (const BYTE *) src;
+
+    if ((((ULONG) d | (ULONG) s) & 3) == 0) {
+        for (; cb >= 4; cb -= 4, d += 4, s += 4) {
+            *(ULONG *) d = *(const ULONG *) s;
+        }
+    }
+    for (; cb > 0; cb--) {
+        *d++ = *s++;
+    }
+}
+#endif
 
 static void mr_surf_make(MR_PDEV *ppdev, LONG cx, PVOID *ppBits,
                          HSURF *phsurf, SURFOBJ **ppso)

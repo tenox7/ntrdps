@@ -18,7 +18,7 @@ layer\layer.res: layer\layer.rc
 	rc -r $(RCFLAGS) -fo layer\layer.res layer\layer.rc
 
 layer\layer.rbj: layer\layer.res
-	cvtres -i386 layer\layer.res -o layer\layer.rbj
+	$(CVTRES) layer\layer.res -o layer\layer.rbj
 
 ntrdpsly.dll: $(OBJS) ntrdpsly.exp $(LAYER_RES)
 	$(LINK) $(LFLAGS) $(DISPDLL_FLAGS) -base:0x62600000 -out:ntrdpsly.dll ntrdpsly.exp $(OBJS) $(LAYER_RES) $(DISPDLL_LIBS)
