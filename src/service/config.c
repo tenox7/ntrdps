@@ -18,7 +18,10 @@ static const struct {
     { "NewClient",     0,        0,         1 },
     { "AltGrFakeCtrl", 2,        0,         2 },
     { "Compression",   1,        0,         1 },
-    { "CompressionMaxType", 1,   0,         1 }
+    { "CompressionMaxType", 1,   0,         1 },
+#ifdef NTRDPS_TLS
+    { "AllowTLS",      1,        0,         1 }
+#endif
 };
 
 typedef char cfg_table_complete[sizeof(g_dword) / sizeof(g_dword[0]) ==

@@ -1,13 +1,39 @@
 # ntrdps - RDP console server for Windows NT
 # Copyright (c) 2026 ntrdps authors. MIT License, see LICENSE.
 
-INC   = -Icore -Irdp -Icapture -Iservice -Idrivers\common
+INC   = -Icore -Irdp -Icapture -Iservice -Idrivers\common -Itls
+
+BEARSSL_OBJS = \
+        tls\bearssl\src\aes_ct_ctr.obj tls\bearssl\src\aes_ct_enc.obj tls\bearssl\src\aes_ct.obj \
+        tls\bearssl\src\ccopy.obj tls\bearssl\src\dec32be.obj tls\bearssl\src\ec_p256_m15.obj \
+        tls\bearssl\src\ec_prime_i15.obj tls\bearssl\src\ec_secp256r1.obj tls\bearssl\src\ec_secp384r1.obj \
+        tls\bearssl\src\ec_secp521r1.obj tls\bearssl\src\ecdsa_atr.obj tls\bearssl\src\ecdsa_i15_bits.obj \
+        tls\bearssl\src\ecdsa_i15_sign_asn1.obj tls\bearssl\src\ecdsa_i15_sign_raw.obj tls\bearssl\src\ecdsa_i15_vrfy_asn1.obj \
+        tls\bearssl\src\ecdsa_i15_vrfy_raw.obj tls\bearssl\src\ecdsa_rta.obj tls\bearssl\src\enc32be.obj \
+        tls\bearssl\src\ghash_ctmul32.obj tls\bearssl\src\hmac_drbg.obj tls\bearssl\src\hmac.obj \
+        tls\bearssl\src\i15_add.obj tls\bearssl\src\i15_bitlen.obj tls\bearssl\src\i15_decmod.obj \
+        tls\bearssl\src\i15_decode.obj tls\bearssl\src\i15_encode.obj tls\bearssl\src\i15_fmont.obj \
+        tls\bearssl\src\i15_iszero.obj tls\bearssl\src\i15_modpow.obj tls\bearssl\src\i15_modpow2.obj \
+        tls\bearssl\src\i15_montmul.obj tls\bearssl\src\i15_muladd.obj tls\bearssl\src\i15_ninv15.obj \
+        tls\bearssl\src\i15_rshift.obj tls\bearssl\src\i15_sub.obj tls\bearssl\src\i15_tmont.obj \
+        tls\bearssl\src\multihash.obj tls\bearssl\src\prf_sha256.obj tls\bearssl\src\prf.obj \
+        tls\bearssl\src\rsa_i15_pkcs1_vrfy.obj tls\bearssl\src\rsa_i15_pub.obj tls\bearssl\src\rsa_pkcs1_sig_unpad.obj \
+        tls\bearssl\src\sha2small.obj tls\bearssl\src\ssl_client.obj tls\bearssl\src\ssl_engine.obj \
+        tls\bearssl\src\ssl_hashes.obj tls\bearssl\src\ssl_hs_client.obj tls\bearssl\src\ssl_hs_server.obj \
+        tls\bearssl\src\ssl_rec_gcm.obj tls\bearssl\src\ssl_scert_single_ec.obj tls\bearssl\src\ssl_server.obj \
+        tls\bearssl\src\sysrng.obj tls\bearssl\src\x509_decoder.obj
+!ifdef TLS
+TLS_OBJS = tls\tls.obj tls\testcert.obj $(BEARSSL_OBJS)
+!else
+TLS_OBJS =
+!endif
+
 OBJS  = service\main.obj service\log.obj service\config.obj core\net.obj \
         service\mrinst.obj \
         rdp\stream.obj rdp\frame.obj rdp\session.obj $(PROTO) $(CORE) \
         core\desktop.obj core\input.obj core\keymap.obj core\sas.obj \
         core\prompt.obj capture\poll.obj capture\cursor.obj capture\mirror.obj \
-        capture\mrshape.obj capture\hookdll.obj capture\reader.obj
+        capture\mrshape.obj capture\hookdll.obj capture\reader.obj $(TLS_OBJS)
 TESTS = tests\t_stream.exe tests\t_log.exe tests\t_frame.exe tests\t_proto.exe \
         tests\t_rle.exe tests\t_keymap.exe tests\t_config.exe \
         tests\t_reduce.exe tests\t_record.exe tests\t_mrshape.exe \
@@ -41,9 +67,15 @@ ddtest: tests\ddtest.exe
 	$(CC) $(CFLAGS_DLL) $(INC) -Fo$@ $<
 {drivers\common}.c{drivers\common}.obj:
 	$(CC) $(CFLAGS_MT) $(INC) -Fo$@ $<
+{tls}.c{tls}.obj:
+	$(CC) $(CFLAGS_MT) -Itls\bearssl\inc $(BRSTDINT) -Dinline=__inline -Fo$@ $<
+{tls\bearssl\src}.c{tls\bearssl\src}.obj:
+	$(CC) $(BRCFLAGS) -Itls\bearssl\inc -Itls\bearssl\src $(BRSTDINT) -Dinline=__inline -DBR_USE_WIN32_RAND=0 -Fo$@ $<
 
 ntrdps.exe: $(OBJS)
-	$(LINK) $(LFLAGS) $(EXE_CON) -out:ntrdps.exe $(OBJS) $(LIBS_MT) $(WINLIBS)
+	$(LINK) $(LFLAGS) $(EXE_CON) -out:ntrdps.exe @<<
+$(OBJS) $(LIBS_MT) $(WINLIBS)
+<<
 
 ntrdpshk.exp: hook\hook.obj hook\ntrdpshk.def
 	$(IMPLIB) -def:hook\ntrdpshk.def hook\hook.obj -out:ntrdpshk.lib

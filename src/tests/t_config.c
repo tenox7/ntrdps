@@ -32,6 +32,9 @@ static void test_defaults(void)
     CHECK_EQ(c.value[CFG_LOG_LEVEL], LOG_INFO);
     CHECK_EQ(c.value[CFG_NEW_CLIENT], 0);
     CHECK_EQ(c.value[CFG_ALTGR_FAKE_CTRL], 2);
+#ifdef NTRDPS_TLS
+    CHECK_EQ(c.value[CFG_ALLOW_TLS], 1);
+#endif
     CHECK(c.log_file[0] == '\0');
     CHECK_EQ(c.key_found, 0);
 }
@@ -61,6 +64,10 @@ static void test_take(void)
     CHECK_EQ(c.value[CFG_COMPRESSION], 0);
     CHECK_EQ(take_dword(&c, "CompressionMaxType", 0), CFG_SET);
     CHECK_EQ(c.value[CFG_COMPRESSION_MAX], 0);
+#ifdef NTRDPS_TLS
+    CHECK_EQ(take_dword(&c, "AllowTLS", 0), CFG_SET);
+    CHECK_EQ(c.value[CFG_ALLOW_TLS], 0);
+#endif
 
     config_defaults(&c);
     CHECK_EQ(take_dword(&c, "Port", 0), CFG_BAD_VALUE);
@@ -77,6 +84,10 @@ static void test_take(void)
     CHECK_EQ(take_dword(&c, "Compression", 2), CFG_BAD_VALUE);
     CHECK_EQ(take_dword(&c, "CompressionMaxType", 3), CFG_BAD_VALUE);
     CHECK_EQ(c.value[CFG_COMPRESSION_MAX], 1);
+#ifdef NTRDPS_TLS
+    CHECK_EQ(take_dword(&c, "AllowTLS", 2), CFG_BAD_VALUE);
+    CHECK_EQ(c.value[CFG_ALLOW_TLS], 1);
+#endif
     CHECK_EQ(take_dword(&c, "ConsolePrompt", 0xFFFFFFFF), CFG_BAD_VALUE);
     CHECK_EQ(c.value[CFG_CONSOLE_PROMPT], 0);
 
@@ -219,12 +230,19 @@ static const char want1[] =
     " INFO  settings: no key HKLM\\SOFTWARE\\ntrdps, so all defaults: "
     "Port 3389, ConsolePrompt 0, PromptTimeout 30, LogLevel 3, "
     "NewClient 0, AltGrFakeCtrl 2, Compression 1, CompressionMaxType 1, "
+#ifdef NTRDPS_TLS
+    "AllowTLS 1, "
+#endif
     "LogFile none";
 static const char want2[] =
     " INFO  settings from HKLM\\SOFTWARE\\ntrdps (\"set\": the value is "
     "there): Port 3390 (set), ConsolePrompt 0, PromptTimeout 30, "
     "LogLevel 3, NewClient 0, AltGrFakeCtrl 2, Compression 1, "
-    "CompressionMaxType 1, LogFile \"C:\\ntrdps\\x.log\" (set)";
+    "CompressionMaxType 1, "
+#ifdef NTRDPS_TLS
+    "AllowTLS 1, "
+#endif
+    "LogFile \"C:\\ntrdps\\x.log\" (set)";
 static const char want3[] =
     " WARN  settings: LogLevel 9 is not allowed (1 - 4): the default 3 is "
     "used";

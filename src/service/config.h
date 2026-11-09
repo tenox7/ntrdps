@@ -16,7 +16,12 @@
 #define CFG_ALTGR_FAKE_CTRL 5
 #define CFG_COMPRESSION     6
 #define CFG_COMPRESSION_MAX 7
+#ifdef NTRDPS_TLS
+#define CFG_ALLOW_TLS       8
+#define CFG_DWORDS          9
+#else
 #define CFG_DWORDS          8
+#endif
 #define CFG_LOG_FILE        CFG_DWORDS
 
 #define CFG_DEFAULT    0

@@ -4,8 +4,12 @@
 
 CC        = cl386
 CFLAGS    = -nologo -c -W3 -Ox -D_X86_=1 -DWIN32
-CFLAGS_MT = $(CFLAGS) -D_MT
+CFLAGS_MT = $(CFLAGS) -D_MT -DNTRDPS_TLS
 CFLAGS_DLL = $(CFLAGS) -Zl
+
+TLS = 1
+BRCFLAGS = -nologo -c -W0 -Od -D_X86_=1 -DWIN32 -D_MT -DBR_NT31
+BRSTDINT = -Itls\bearssl\nt31
 
 LINK      = link32
 LFLAGS    = -align:0x1000

@@ -3,8 +3,12 @@
 
 CC         = cl
 CFLAGS     = -nologo -c -W3 -Ox -D_X86_=1 -DWIN32 -D_WIN32
-CFLAGS_MT  = $(CFLAGS) -MT
+CFLAGS_MT  = $(CFLAGS) -MT -DNTRDPS_TLS
 CFLAGS_DLL = $(CFLAGS) -Zl
+
+TLS = 1
+BRCFLAGS = -nologo -c -W0 -Od -D_X86_=1 -DWIN32 -D_WIN32 -MT
+BRSTDINT = -Itls\bearssl\compat
 
 LINK       = link
 LFLAGS     = -nologo

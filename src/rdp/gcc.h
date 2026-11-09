@@ -16,6 +16,11 @@ int gcc_read_request(SESSION *s, const unsigned char *p, unsigned int len);
 unsigned int gcc_response_len(unsigned int n);
 void gcc_write_response(OUTS *o, unsigned int n);
 
+#ifdef NTRDPS_TLS
+unsigned int gcc_response_len_tls(unsigned int n);
+void gcc_write_response_tls(OUTS *o, unsigned int n, unsigned long protocols);
+#endif
+
 int gcc_session_depth(const SESSION *s, int d);
 
 #endif

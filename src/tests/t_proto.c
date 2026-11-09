@@ -144,6 +144,7 @@ static void expect_all(int line, ...)
 
 #define CC_PLAIN "03 00 00 0B 06 D0 00 00 12 34 00"
 #define CC_NEG   "03 00 00 13 0E D0 00 00 12 34 00 02 00 08 00 00 00 00 00"
+#define CC_NEG_TLS "03 00 00 13 0E D0 00 00 12 34 00 02 00 08 00 01 00 00 00"
 #define CR_PLAIN "03 00 00 0B 06 E0 00 00 00 00 00"
 
 static void test_x224(void)
@@ -163,12 +164,30 @@ static void test_x224(void)
     reset();
     feed("03 00 00 2B 26 E0 00 00 00 00 00 43 6F 6F 6B 69 65 3A 20 6D 73 74"
          "73 68 61 73 68 3D 74 65 6E 6F 78 0D 0A 01 00 08 00 01 00 00 00");
+#ifdef NTRDPS_TLS
+    EXPECT(CC_NEG_TLS);
+#else
+    EXPECT(CC_NEG);
+#endif
+    CHECK_EQ(g_s.state, ST_WAIT_CI);
+
+#ifdef NTRDPS_TLS
+    rdp_set_allow_tls(0);
+    reset();
+    feed("03 00 00 2B 26 E0 00 00 00 00 00 43 6F 6F 6B 69 65 3A 20 6D 73 74"
+         "73 68 61 73 68 3D 74 65 6E 6F 78 0D 0A 01 00 08 00 01 00 00 00");
     EXPECT(CC_NEG);
     CHECK_EQ(g_s.state, ST_WAIT_CI);
+    rdp_set_allow_tls(1);
+#endif
 
     reset();
     feed("03 00 00 13 0E E0 00 00 00 00 00 01 00 08 00 03 00 00 00");
+#ifdef NTRDPS_TLS
+    EXPECT(CC_NEG_TLS);
+#else
     EXPECT(CC_NEG);
+#endif
 
     reset();
     feed("03 00 00 1C 17 E0 00 00 00 00 00 43 6F 6F 6B 69 65 3A 20 78"

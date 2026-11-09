@@ -79,6 +79,7 @@ static char      g_log[16384];
 static int       g_restart;
 static int       g_warn;
 static int       g_later;
+static int       g_driver = 1;
 
 static void say(const char *fmt, ...)
 {
@@ -781,16 +782,34 @@ static int do_install(void)
         CloseServiceHandle(scm);
         return R_FAILED;
     }
-    rc = run_ntrdps(g_ver == V40 ? "-installmirror" : "-installlayer", out,
-                    sizeof(out));
-    if (rc == 0) {
-        say("Display driver: installed. It loads at the next restart.\n");
-        g_restart = 1;
+    if (g_driver) {
+        rc = run_ntrdps(g_ver == V40 ? "-installmirror" : "-installlayer", out,
+                        sizeof(out));
+        if (rc == 0) {
+            say("Display driver: installed. It loads at the next restart.\n");
+            g_restart = 1;
+        } else {
+            say("Display driver: not installed. ntrdps works without it, only "
+                "slower. What ntrdps said:\n");
+            say_text(out);
+            g_warn = 1;
+        }
+    } else if (driver_on() || (g_ver != V40 && driver_there())) {
+        rc = run_ntrdps(g_ver == V40 ? "-uninstallmirror" : "-uninstalllayer",
+                        out, sizeof(out));
+        if (rc == 0) {
+            say("Display driver: switched off (you chose reading the screen). "
+                "It goes off at the next restart.\n");
+            g_restart = 1;
+        } else {
+            say("Display driver: could not switch it off. What ntrdps said:\n");
+            say_text(out);
+            g_warn = 1;
+        }
     } else {
-        say("Display driver: not installed. ntrdps works without it, only "
-            "slower. What ntrdps said:\n");
-        say_text(out);
-        g_warn = 1;
+        say("Display driver: not installed (you chose reading the screen). "
+            "ntrdps reads the screen. The driver files are here too, so you "
+            "can switch it on later: see the README.\n");
     }
     if (!StartServiceA(svc, 0, NULL) &&
         GetLastError() != ERROR_SERVICE_ALREADY_RUNNING) {
@@ -951,8 +970,7 @@ static void plan_text(char *t)
     sprintf(t,
             "1. Copy %s to %s.\n"
             "2. Add the service \"ntrdps\". It starts at every boot.\n"
-            "3. Add the display driver%s. It makes the screen faster. It "
-            "loads at the next restart.\n"
+            "%s\n"
             "4. Start the service. RDP clients can connect then.\n"
             "\n"
             "Remove takes all of it away again, the settings too.",
@@ -960,8 +978,16 @@ static void plan_text(char *t)
                            "ntrdpsmr.dll and ntrdpsm0.dll" :
                            "ntrdps.exe, ntrdpshk.dll and ntrdpsly.dll",
             g_dir,
-            g_ver == V40 ? " ntrdpsmr to System32" :
-                           ": ntrdpsly.dll goes to System32 as layrdisp.dll");
+            g_driver ?
+                (g_ver == V40 ?
+                 "3. Add the display driver ntrdpsmr to System32. It makes the "
+                 "screen faster. It loads at the next restart." :
+                 "3. Add the display driver: ntrdpsly.dll goes to System32 as "
+                 "layrdisp.dll. It makes the screen faster. It loads at the "
+                 "next restart.") :
+                "3. No display driver (you chose reading the screen - no "
+                "reboot). The driver files are copied too, so you can switch "
+                "it on later.");
 }
 
 static void status_text(char *t, int admin)
@@ -1030,7 +1056,7 @@ static void report(HWND owner, int r, int install)
 
     strcpy(text, g_log);
     if (r == R_DONE && g_restart) {
-        if (install) {
+        if (install && g_driver) {
             strcat(text, LKG_TEXT);
         }
         strcat(text, "\nRestart Windows NT now?");
@@ -1077,6 +1103,9 @@ static void act(HWND w, int id)
     EnableWindow(GetDlgItem(w, IDC_INSTALL), FALSE);
     EnableWindow(GetDlgItem(w, IDC_REMOVE), FALSE);
     old = SetCursor(LoadCursor(NULL, IDC_WAIT));
+    if (id == IDC_INSTALL) {
+        g_driver = IsDlgButtonChecked(w, IDC_RB_DRIVER) ? 1 : 0;
+    }
     g_log[0] = '\0';
     g_restart = g_warn = g_later = 0;
     r = id == IDC_INSTALL ? do_install() : do_remove();
@@ -1087,10 +1116,14 @@ static void act(HWND w, int id)
 
 static BOOL CALLBACK dlg_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
 {
+    char buf[2048];
+
     (void) lp;
     switch (msg) {
     case WM_INITDIALOG:
         SetWindowTextA(w, "ntrdps " NTRDPS_VERSION " Setup");
+        g_driver = 1;
+        CheckRadioButton(w, IDC_RB_DRIVER, IDC_RB_POLL, IDC_RB_DRIVER);
         center(w);
         refresh(w);
         return FALSE;
@@ -1099,6 +1132,12 @@ static BOOL CALLBACK dlg_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
         case IDC_INSTALL:
         case IDC_REMOVE:
             act(w, LOWORD(wp));
+            return TRUE;
+        case IDC_RB_DRIVER:
+        case IDC_RB_POLL:
+            g_driver = LOWORD(wp) == IDC_RB_DRIVER;
+            plan_text(buf);
+            SetDlgItemTextA(w, IDC_PLAN, buf);
             return TRUE;
         case IDCANCEL:
             EndDialog(w, 0);
@@ -1158,6 +1197,7 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmd, int show)
     pick_dir();
     quiet = has_opt(cmd, "q");
     install = has_opt(cmd, "install");
+    g_driver = !has_opt(cmd, "poll") && !has_opt(cmd, "nodriver");
     if (has_opt(cmd, "status")) {
         status_text(g_log, can_admin());
         strcat(g_log, "\n");

@@ -9,6 +9,8 @@
 #define IDC_STATUS      1002
 #define IDC_INSTALL     1003
 #define IDC_REMOVE      1004
+#define IDC_RB_DRIVER   1005
+#define IDC_RB_POLL     1006
 
 #define IDF_EXE31       201
 #define IDF_HOOK31      202

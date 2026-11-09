@@ -12,6 +12,9 @@
 #include "frame.h"
 #include "session.h"
 #include "rdp.h"
+#ifdef NTRDPS_TLS
+#include "tls.h"
+#endif
 
 #define FLUSH_MAX_MS   5000
 #define CLOSE_DRAIN_MS 2000
@@ -76,26 +79,65 @@ void session_wake(SESSION *s)
     }
 }
 
+#ifdef NTRDPS_TLS
+static void start_tls(SESSION *s)
+{
+    s->tls = tls_server_start(s->sock);
+    if (s->tls == NULL) {
+        session_end(s, 0, "TLS: cannot start the server (out of memory or "
+                    "BearSSL setup failed)");
+        return;
+    }
+    s->want_tls = 0;
+    log_msg(LOG_INFO, "session %s: TLS 1.2 starting (modern-client path)",
+            s->peer);
+}
+#endif
+
 static void flush(SESSION *s)
 {
     int n, err;
 
     while (s->tx_pos < s->tx_len) {
-        n = send(s->sock, (const char *) s->tx + s->tx_pos,
-                 (int) (s->tx_len - s->tx_pos), 0);
-        if (n == SOCKET_ERROR) {
-            err = WSAGetLastError();
-            if (err != WSAEWOULDBLOCK) {
-                session_end(s, 0, "send failed, error %d%s", err,
-                            net_error_text(err));
+#ifdef NTRDPS_TLS
+        if (s->tls != NULL) {
+            n = tls_write(s->tls, (const char *) s->tx + s->tx_pos,
+                          (int) (s->tx_len - s->tx_pos));
+            if (n <= 0) {
+                if (n == -1) {
+                    session_end(s, 0, "TLS send failed: %s",
+                                tls_error(s->tls));
+                }
+                return;
             }
-            return;
+        } else
+#endif
+        {
+            n = send(s->sock, (const char *) s->tx + s->tx_pos,
+                     (int) (s->tx_len - s->tx_pos), 0);
+            if (n == SOCKET_ERROR) {
+                err = WSAGetLastError();
+                if (err != WSAEWOULDBLOCK) {
+                    session_end(s, 0, "send failed, error %d%s", err,
+                                net_error_text(err));
+                }
+                return;
+            }
         }
         s->tx_pos += (unsigned int) n;
         s->tx_bytes += (unsigned long) n;
     }
     s->tx_pos = 0;
     s->tx_len = 0;
+#ifdef NTRDPS_TLS
+    if (s->want_tls) {
+        start_tls(s);
+    } else if (s->tls != NULL) {
+        if (tls_flush(s->tls) == -1) {
+            session_end(s, 0, "TLS flush failed: %s", tls_error(s->tls));
+        }
+    }
+#endif
 }
 
 int session_send(SESSION *s, const unsigned char *pkt, unsigned int len)
@@ -126,22 +168,37 @@ static void receive(SESSION *s)
     unsigned int pos, len;
     int n, kind, err;
 
-    n = recv(s->sock, (char *) s->rx + s->rx_len,
-             (int) (SESS_RX_MAX - s->rx_len), 0);
+#ifdef NTRDPS_TLS
+    if (s->tls != NULL) {
+        n = tls_read(s->tls, (char *) s->rx + s->rx_len,
+                     (int) (SESS_RX_MAX - s->rx_len));
+        if (n == TLS_WOULDBLOCK) {
+            return;
+        }
+        if (n < 0) {
+            session_end(s, 0, "TLS receive failed: %s", tls_error(s->tls));
+            return;
+        }
+    } else
+#endif
+    {
+        n = recv(s->sock, (char *) s->rx + s->rx_len,
+                 (int) (SESS_RX_MAX - s->rx_len), 0);
+        if (n == SOCKET_ERROR) {
+            err = WSAGetLastError();
+            if (err != WSAEWOULDBLOCK) {
+                session_end(s, 0, "recv failed, error %d%s", err,
+                            net_error_text(err));
+            }
+            return;
+        }
+    }
     if (n == 0) {
         if (s->rx_len > 0) {
             session_end(s, 0, "the client closed the connection in the "
                         "middle of a packet (%u bytes of it)", s->rx_len);
         } else {
             session_end(s, 0, "the client closed the connection");
-        }
-        return;
-    }
-    if (n == SOCKET_ERROR) {
-        err = WSAGetLastError();
-        if (err != WSAEWOULDBLOCK) {
-            session_end(s, 0, "recv failed, error %d%s", err,
-                        net_error_text(err));
         }
         return;
     }
@@ -227,6 +284,17 @@ static void turn(SESSION *s)
     if (s->tx_pos < s->tx_len) {
         FD_SET(s->sock, &wr);
     }
+#ifdef NTRDPS_TLS
+    if (s->tls != NULL) {
+        long ev = tls_events(s->tls);
+        if (ev & FD_READ) {
+            FD_SET(s->sock, &rd);
+        }
+        if (ev & FD_WRITE) {
+            FD_SET(s->sock, &wr);
+        }
+    }
+#endif
     tv.tv_sec = 0;
     tv.tv_usec = NET_POLL_MS * 1000L;
     n = select(0, &rd, &wr, NULL, &tv);
@@ -348,5 +416,10 @@ void session_run(SOCKET sock, const char *peer, volatile LONG *stop)
     if (s->wake != INVALID_SOCKET) {
         closesocket(s->wake);
     }
+#ifdef NTRDPS_TLS
+    if (s->tls != NULL) {
+        tls_free(s->tls);
+    }
+#endif
     free(s);
 }

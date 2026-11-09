@@ -208,6 +208,20 @@ int rdp_compression(int *max_type)
     return g_compress;
 }
 
+#ifdef NTRDPS_TLS
+static int g_allow_tls = 1;
+
+void rdp_set_allow_tls(int on)
+{
+    g_allow_tls = on ? 1 : 0;
+}
+
+int rdp_allow_tls(void)
+{
+    return g_allow_tls;
+}
+#endif
+
 void rdp_start(const CORE_API *core, void *core_ctx)
 {
     g_core = core;

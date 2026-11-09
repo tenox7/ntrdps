@@ -65,9 +65,16 @@ static void connect_response(SESSION *s)
 {
     unsigned char buf[256];
     OUTS o;
-    unsigned int gl = gcc_response_len(s->channels);
-    unsigned int body = 3 + 3 + sizeof(domain_params)
-                        + 1 + ber_len_size(gl) + gl;
+    unsigned int gl;
+    unsigned int body;
+
+    gl = gcc_response_len(s->channels);
+#ifdef NTRDPS_TLS
+    if (s->tls != NULL) {
+        gl = gcc_response_len_tls(s->channels);
+    }
+#endif
+    body = 3 + 3 + sizeof(domain_params) + 1 + ber_len_size(gl) + gl;
 
     x224_begin(&o, buf, sizeof(buf));
     out_u8(&o, 0x7F);
@@ -82,7 +89,12 @@ static void connect_response(SESSION *s)
     out_bytes(&o, domain_params, sizeof(domain_params));
     out_u8(&o, 0x04);
     ber_write_len(&o, gl);
-    gcc_write_response(&o, s->channels);
+#ifdef NTRDPS_TLS
+    if (s->tls != NULL) {
+        gcc_write_response_tls(&o, s->channels, s->client_protocols);
+    } else
+#endif
+        gcc_write_response(&o, s->channels);
     if (x224_end(s, &o)) {
         s->state = ST_WAIT_DOMAIN;
     }

@@ -7,6 +7,9 @@
 #include <string.h>
 #include "log.h"
 #include "net.h"
+#ifdef NTRDPS_TLS
+#include "tls.h"
+#endif
 
 #define LISTEN_POLL_MS 250
 #define BIND_RETRY_MS  5000
@@ -245,6 +248,11 @@ int net_serve(unsigned int port, HANDLE stop_event, NET_SESSION_FN fn)
     log_msg(LOG_INFO, "Winsock %u.%u: %.60s",
             (unsigned) LOBYTE(wsa.wVersion), (unsigned) HIBYTE(wsa.wVersion),
             wsa.szDescription);
+#ifdef NTRDPS_TLS
+    tls_startup();
+    log_msg(LOG_INFO, "TLS available (experiment M12): a client may ask for "
+            "PROTOCOL_SSL");
+#endif
 
     for (;;) {
         ls = open_listener(port, &err);
@@ -284,6 +292,9 @@ int net_serve(unsigned int port, HANDLE stop_event, NET_SESSION_FN fn)
 
     slots_stop();
     closesocket(ls);
+#ifdef NTRDPS_TLS
+    tls_cleanup();
+#endif
     WSACleanup();
     log_msg(LOG_INFO, "listener closed");
     return 0;

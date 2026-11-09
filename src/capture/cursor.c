@@ -6,6 +6,7 @@
 #include <string.h>
 #include "log.h"
 #include "core.h"
+#include "desktop.h"
 #include "hookdll.h"
 #include "cursor.h"
 
@@ -220,12 +221,37 @@ static int other_window(CURSOR *c, HWND w, DWORD thread)
 
 static HCURSOR guess_cursor(HWND w, POINT pt)
 {
+    RECT wr, cr;
+    POINT cpt;
+    HWND child;
     HCURSOR h = NULL;
-    RECT r;
 
-    if (w != NULL && GetClientRect(w, &r) && ScreenToClient(w, &pt) &&
-        PtInRect(&r, pt)) {
-        h = (HCURSOR) GetClassLongA(w, GCL_HCURSOR);
+    if (w == NULL) {
+        return LoadCursorA(NULL, IDC_ARROW);
+    }
+    if ((GetWindowLongA(w, GWL_STYLE) & WS_THICKFRAME) && GetWindowRect(w, &wr)) {
+        int cx = GetSystemMetrics(SM_CXFRAME);
+        int cy = GetSystemMetrics(SM_CYFRAME);
+        int l = pt.x <  wr.left   + cx;
+        int r = pt.x >= wr.right  - cx;
+        int t = pt.y <  wr.top    + cy;
+        int b = pt.y >= wr.bottom - cy;
+        LPCSTR id = NULL;
+        const char *nm = NULL;
+        if ((l && t) || (r && b))      { id = IDC_SIZENWSE; nm = "size-nwse"; }
+        else if ((r && t) || (l && b)) { id = IDC_SIZENESW; nm = "size-nesw"; }
+        else if (l || r)               { id = IDC_SIZEWE;   nm = "size-we"; }
+        else if (t || b)               { id = IDC_SIZENS;   nm = "size-ns"; }
+        if (id != NULL) {
+            log_msg(LOG_DEBUG, "cursor: %s over window 0x%08lx border", nm,
+                    (unsigned long) w);
+            return LoadCursorA(NULL, id);
+        }
+    }
+    cpt = pt;
+    if (GetClientRect(w, &cr) && ScreenToClient(w, &cpt) && PtInRect(&cr, cpt)) {
+        child = ChildWindowFromPoint(w, cpt);
+        h = (HCURSOR) GetClassLongA(child != NULL ? child : w, GCL_HCURSOR);
     }
     return h != NULL ? h : LoadCursorA(NULL, IDC_ARROW);
 }
@@ -258,7 +284,7 @@ void cursor_check(HDC screen, const char *desktop)
     }
     h = hookdll_cursor(&serial, &thread);
     w = c->have_pos ? WindowFromPoint(c->pos) : NULL;
-    if (serial == 0 || other_window(c, w, thread)) {
+    if (serial == 0 || desktop_nt31() || other_window(c, w, thread)) {
         h = guess_cursor(w, c->pos);
     }
     tell_handle(c, screen, h);

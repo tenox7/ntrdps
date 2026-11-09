@@ -12,6 +12,11 @@ void rdp_start(const CORE_API *core, void *core_ctx);
 void rdp_set_compression(int on, int max_type);
 int  rdp_compression(int *max_type);
 
+#ifdef NTRDPS_TLS
+void rdp_set_allow_tls(int on);
+int  rdp_allow_tls(void);
+#endif
+
 int rdp_frame_depth(const CORE_FRAME *f);
 
 int rdp_same_mode(const SESSION *s, const CORE_FRAME *f);

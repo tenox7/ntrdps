@@ -234,6 +234,10 @@ typedef struct {
     unsigned char  tx[SESS_TX_MAX];
     unsigned int   tx_pos, tx_len;
 
+    int                want_tls;
+    struct tls_conn   *tls;
+    unsigned long      client_protocols;
+
     unsigned long  rx_bytes, rx_packets;
     unsigned long  tx_bytes, tx_packets;
     unsigned long  fastpath;

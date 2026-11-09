@@ -223,6 +223,52 @@ void gcc_write_response(OUTS *o, unsigned int n)
     out_u32le(o, 0);
 }
 
+#ifdef NTRDPS_TLS
+static unsigned int data_len_tls(unsigned int n)
+{
+    return 16 + (8 + 2 * n + (n & 1) * 2) + 12;
+}
+
+unsigned int gcc_response_len_tls(unsigned int n)
+{
+    return 7 + 1 + 14 + data_len_tls(n);
+}
+
+void gcc_write_response_tls(OUTS *o, unsigned int n, unsigned long protocols)
+{
+    unsigned int udl = data_len_tls(n);
+    unsigned int i;
+
+    out_bytes(o, t124_key, 7);
+    out_u8(o, 14 + udl);
+    out_bytes(o, ccr_head, 9);
+    out_bytes(o, "McDn", 4);
+    out_u8(o, udl);
+
+    out_u16le(o, SC_CORE);
+    out_u16le(o, 16);
+    out_u32le(o, RDP5_VERSION);
+    out_u32le(o, protocols);
+    out_u32le(o, 0);
+
+    out_u16le(o, SC_NET);
+    out_u16le(o, 8 + 2 * n + (n & 1) * 2);
+    out_u16le(o, MCS_IO_CHANNEL);
+    out_u16le(o, n);
+    for (i = 0; i < n; i++) {
+        out_u16le(o, MCS_IO_CHANNEL + 1 + i);
+    }
+    if (n & 1) {
+        out_u16le(o, 0);
+    }
+
+    out_u16le(o, SC_SECURITY);
+    out_u16le(o, 12);
+    out_u32le(o, 0);
+    out_u32le(o, 0);
+}
+#endif
+
 int gcc_session_depth(const SESSION *s, int d)
 {
     unsigned int w = s->high_depth, m = s->supported_depths;

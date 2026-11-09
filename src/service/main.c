@@ -103,6 +103,9 @@ static int run(const char *mode, const CORE_BACKEND *backend)
     core_set_new_client((int) g_cfg.value[CFG_NEW_CLIENT]);
     rdp_set_compression((int) g_cfg.value[CFG_COMPRESSION],
                         (int) g_cfg.value[CFG_COMPRESSION_MAX]);
+#ifdef NTRDPS_TLS
+    rdp_set_allow_tls((int) g_cfg.value[CFG_ALLOW_TLS]);
+#endif
     rdp_start(&core_api, core);
     rc = net_serve((unsigned int) g_cfg.value[CFG_PORT], g_stop,
                    session_run);

@@ -7,6 +7,9 @@
 #include "frame.h"
 #include "session.h"
 #include "x224.h"
+#ifdef NTRDPS_TLS
+#include "rdp.h"
+#endif
 
 #define X224_CR  0xE0
 #define X224_CC  0xD0
@@ -16,6 +19,9 @@
 #define OUR_SRC_REF  0x1234
 #define RDP_NEG_REQ  0x01
 #define RDP_NEG_RSP  0x02
+
+#define PROTOCOL_RDP  0x00000000UL
+#define PROTOCOL_SSL  0x00000001UL
 
 static void cookie_text(char *dst, unsigned int size, const unsigned char *p,
                         unsigned int n)
@@ -38,7 +44,7 @@ void x224_connect(SESSION *s, const unsigned char *p, unsigned int len)
     OUTS o;
     INS in;
     unsigned int pos, end, start, src_ref;
-    unsigned long protocols = 0;
+    unsigned long protocols = 0, sel = PROTOCOL_RDP;
     int neg = 0;
 
     if (len < 11 || (p[5] & 0xF0) != X224_CR) {
@@ -73,11 +79,18 @@ void x224_connect(SESSION *s, const unsigned char *p, unsigned int len)
         neg = 1;
         in_init(&in, p + pos + 4, 4);
         protocols = in_u32le(&in);
+#ifdef NTRDPS_TLS
+        if ((protocols & PROTOCOL_SSL) && rdp_allow_tls()) {
+            sel = PROTOCOL_SSL;
+            s->client_protocols = protocols;
+        }
+#endif
     }
     if (neg) {
         log_msg(LOG_INFO, "session %s: X.224 Connection Request, cookie %s, "
-                "RDP_NEG_REQ requestedProtocols 0x%lx; we select 0 (plain "
-                "RDP)", s->peer, cookie, protocols);
+                "RDP_NEG_REQ requestedProtocols 0x%lx; we select 0x%lx (%s)",
+                s->peer, cookie, protocols, sel,
+                sel == PROTOCOL_SSL ? "TLS" : "plain RDP");
     } else {
         log_msg(LOG_INFO, "session %s: X.224 Connection Request, cookie %s, "
                 "no RDP_NEG_REQ", s->peer, cookie);
@@ -96,8 +109,13 @@ void x224_connect(SESSION *s, const unsigned char *p, unsigned int len)
         out_u8(&o, RDP_NEG_RSP);
         out_u8(&o, 0);
         out_u16le(&o, 8);
-        out_u32le(&o, 0);
+        out_u32le(&o, sel);
     }
+#ifdef NTRDPS_TLS
+    if (sel == PROTOCOL_SSL) {
+        s->want_tls = 1;
+    }
+#endif
     if (session_send(s, cc, out_len(&o))) {
         s->state = ST_WAIT_CI;
     }
