@@ -293,6 +293,12 @@ long tls_events(TLS *t)
     return t ? t->events : 0;
 }
 
+int tls_pending(TLS *t)
+{
+    return t != NULL &&
+        (br_ssl_engine_current_state(&t->sc.eng) & BR_SSL_RECVAPP) != 0;
+}
+
 const char *tls_error(TLS *t)
 {
     static char msg[64];

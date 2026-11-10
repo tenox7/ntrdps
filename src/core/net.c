@@ -250,8 +250,8 @@ int net_serve(unsigned int port, HANDLE stop_event, NET_SESSION_FN fn)
             wsa.szDescription);
 #ifdef NTRDPS_TLS
     tls_startup();
-    log_msg(LOG_INFO, "TLS available (experiment M12): a client may ask for "
-            "PROTOCOL_SSL");
+    log_msg(LOG_INFO, "TLS built in: a client may ask for PROTOCOL_SSL "
+            "(setting AllowTLS)");
 #endif
 
     for (;;) {

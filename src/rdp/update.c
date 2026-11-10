@@ -1172,8 +1172,20 @@ void update_stop(SESSION *s)
 
 void update_pump(SESSION *s)
 {
+#ifdef NTRDPS_TLS
+    DWORD t0 = GetTickCount();
+#endif
+
     while (s->state == ST_ACTIVE && s->ending == END_NO && !s->suppressed &&
            !s->mode_due && SESSION_QUEUED(s) < UPDATE_QUEUE_MAX) {
+#ifdef NTRDPS_TLS
+        if (GetTickCount() - t0 >= UPDATE_INPUT_MS) {
+            if (session_input_waiting(s)) {
+                break;
+            }
+            t0 = GetTickCount();
+        }
+#endif
         if (s->upd_palette) {
             s->upd_palette = 0;
             send_palette(s);

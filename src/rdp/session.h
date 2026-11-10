@@ -327,4 +327,8 @@ void session_end(SESSION *s, int flush, const char *fmt, ...);
 
 void session_wake(SESSION *s);
 
+#ifdef NTRDPS_TLS
+int session_input_waiting(SESSION *s);
+#endif
+
 #endif

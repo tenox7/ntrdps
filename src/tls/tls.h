@@ -23,6 +23,8 @@ int  tls_flush(TLS *t);
 
 long tls_events(TLS *t);
 
+int  tls_pending(TLS *t);
+
 const char *tls_error(TLS *t);
 
 void tls_free(TLS *t);

@@ -38,3 +38,10 @@ int session_send(SESSION *s, const unsigned char *pkt, unsigned int len)
 void session_wake(SESSION *s)
 {
 }
+
+#ifdef NTRDPS_TLS
+int session_input_waiting(SESSION *s)
+{
+    return 0;
+}
+#endif

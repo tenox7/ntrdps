@@ -163,6 +163,23 @@ int session_send(SESSION *s, const unsigned char *pkt, unsigned int len)
     return 1;
 }
 
+#ifdef NTRDPS_TLS
+int session_input_waiting(SESSION *s)
+{
+    fd_set rd;
+    struct timeval tv;
+
+    if (s->tls != NULL && tls_pending(s->tls)) {
+        return 1;
+    }
+    FD_ZERO(&rd);
+    FD_SET(s->sock, &rd);
+    tv.tv_sec = 0;
+    tv.tv_usec = 0;
+    return select(0, &rd, NULL, NULL, &tv) == 1;
+}
+#endif
+
 static void receive(SESSION *s)
 {
     unsigned int pos, len;
@@ -297,6 +314,11 @@ static void turn(SESSION *s)
 #endif
     tv.tv_sec = 0;
     tv.tv_usec = NET_POLL_MS * 1000L;
+#ifdef NTRDPS_TLS
+    if (s->tls != NULL && s->ending == END_NO && tls_pending(s->tls)) {
+        tv.tv_usec = 0;
+    }
+#endif
     n = select(0, &rd, &wr, NULL, &tv);
     if (n == SOCKET_ERROR) {
         err = WSAGetLastError();
@@ -322,6 +344,11 @@ static void turn(SESSION *s)
     if (FD_ISSET(s->sock, &rd)) {
         receive(s);
     }
+#ifdef NTRDPS_TLS
+    else if (s->tls != NULL && s->ending == END_NO && tls_pending(s->tls)) {
+        receive(s);
+    }
+#endif
     if (s->wake != INVALID_SOCKET && !s->wake_off &&
         FD_ISSET(s->wake, &rd)) {
         s->wake_reads++;

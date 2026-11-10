@@ -12,6 +12,10 @@ Encryption is optional: a client that asks for TLS gets an encrypted connection;
 asks for plain RDP gets plain text. This works on every CPU - x86, MIPS, Alpha and PowerPC.
 There is still no login either way.
 
+Every copy of ntrdps has the same built-in TLS certificate, and its private key is public (it is
+in `src/tls`). So TLS stops someone who only listens. It does not stop someone who can get
+between you and the server.
+
 ## Install
 
 1. Download the installer for your CPU from [Releases](https://github.com/tenox7/ntrdps/releases).

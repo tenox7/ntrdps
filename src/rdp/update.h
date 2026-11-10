@@ -8,6 +8,8 @@
 
 #define UPDATE_QUEUE_MAX 16384
 
+#define UPDATE_INPUT_MS 20
+
 void update_screen(SESSION *s);
 
 int update_area(SESSION *s, long left, long top, long right, long bottom);
