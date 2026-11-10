@@ -8,9 +8,9 @@ the console, so it is console only and not multi-user.
 **No login.** Anyone who can reach TCP port 3389 gets the console. Use it only on a network
 you trust. Tested in QEMU only, not yet on real hardware.
 
-Encryption is optional: on the x86 build, a client that asks for TLS gets an encrypted
-connection; other clients, and all MIPS, Alpha and PowerPC clients, get plain text. There is
-still no login either way.
+Encryption is optional: a client that asks for TLS gets an encrypted connection; a client that
+asks for plain RDP gets plain text. This works on every CPU - x86, MIPS, Alpha and PowerPC.
+There is still no login either way.
 
 ## Install
 
@@ -41,11 +41,11 @@ In a batch file: `ntrdpset /install /q` (or `/remove`, `/status`). ERRORLEVEL: 0
 |---|---|
 | rdesktop | `rdesktop -e HOST` |
 | FreeRDP 3, plain | `xfreerdp3 /v:HOST /sec:rdp /cert:ignore /u:x /p:x` (or `sdl-freerdp`) |
-| FreeRDP 3, TLS (x86) | `xfreerdp3 /v:HOST /sec:tls /cert:ignore /u:x /p:x` |
+| FreeRDP 3, TLS | `xfreerdp3 /v:HOST /sec:tls /cert:ignore /u:x /p:x` |
 | mstsc 5.0, 5.1 | `mstsc /v:HOST` (Ctrl+Alt+End for Ctrl+Alt+Del) |
 
-TLS works on the x86 build only; the MIPS, Alpha and PowerPC builds are plain, so use `/sec:rdp`
-there. mstsc 6.0 and later need TLS; the x86 build speaks it, but those clients are not tested yet.
+TLS works on every build - x86, MIPS, Alpha and PowerPC. mstsc 6.0 and later need TLS; ntrdps
+speaks it, but those clients are not tested yet.
 
 ## Build
 

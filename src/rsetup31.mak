@@ -16,8 +16,12 @@ MACH      = alpha
 !ENDIF
 
 CFLAGS    = -c -W3 -Od $(CPUDEF) -DWIN32
-CFLAGS_MT = $(CFLAGS) -D_MT
+CFLAGS_MT = $(CFLAGS) -D_MT -DNTRDPS_TLS
 CFLAGS_DLL = $(CFLAGS)
+
+TLS = 1
+BRCFLAGS = -c -W0 -Od $(CPUDEF) -DWIN32 -D_MT -DBR_NT31
+BRSTDINT = -Itls\bearssl\nt31
 
 LINK      = link32
 LFLAGS    =
