@@ -1175,6 +1175,7 @@ static int do_remove(void)
     return R_DONE;
 }
 
+#ifndef NTRDPS_LOGIN
 static void plan_text(char *t)
 {
     if (g_ver == 0) {
@@ -1204,6 +1205,7 @@ static void plan_text(char *t)
                 "reboot). The driver files are copied too, so you can switch "
                 "it on later.");
 }
+#endif
 
 static void status_text(char *t, int admin)
 {
@@ -1295,8 +1297,10 @@ static void refresh(HWND w)
     int admin = can_admin();
     int can = g_ver != 0 && admin && !has_key(REMOVED_KEY);
 
+#ifndef NTRDPS_LOGIN
     plan_text(text);
     SetDlgItemTextA(w, IDC_PLAN, text);
+#endif
     status_text(text, admin);
     SetDlgItemTextA(w, IDC_STATUS, text);
     EnableWindow(GetDlgItem(w, IDC_INSTALL), can);
@@ -1317,17 +1321,6 @@ static void center(HWND w)
 }
 
 #ifdef NTRDPS_LOGIN
-static void login_text(HWND w)
-{
-    SetDlgItemTextA(w, IDC_LOGIN_TEXT, !g_login ?
-                    "Off: anyone who can reach TCP port 3389 gets the "
-                    "console." : own_account() ?
-                    "Windows NT 3.1 and 3.5: Install asks for a user name "
-                    "and password." :
-                    "RDP clients log on with an administrator account of "
-                    "this computer.");
-}
-
 static BOOL CALLBACK account_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
 {
     static char again[sizeof(g_lpw)];
@@ -1428,7 +1421,9 @@ static void act(HWND w, int id)
 
 static BOOL CALLBACK dlg_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
 {
+#ifndef NTRDPS_LOGIN
     char buf[2048];
+#endif
 
     (void) lp;
     switch (msg) {
@@ -1439,7 +1434,10 @@ static BOOL CALLBACK dlg_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
 #ifdef NTRDPS_LOGIN
         g_login = get_login();
         CheckDlgButton(w, IDC_CB_LOGIN, g_login ? 1 : 0);
-        login_text(w);
+        if (g_ver != V40) {
+            SetDlgItemTextA(w, IDC_RB_DRIVER,
+                            "&Layered Driver (fast, runs in CSRSS)");
+        }
 #endif
         center(w);
         refresh(w);
@@ -1453,14 +1451,15 @@ static BOOL CALLBACK dlg_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
 #ifdef NTRDPS_LOGIN
         case IDC_CB_LOGIN:
             g_login = IsDlgButtonChecked(w, IDC_CB_LOGIN) ? 1 : 0;
-            login_text(w);
             return TRUE;
 #endif
         case IDC_RB_DRIVER:
         case IDC_RB_POLL:
             g_driver = LOWORD(wp) == IDC_RB_DRIVER;
+#ifndef NTRDPS_LOGIN
             plan_text(buf);
             SetDlgItemTextA(w, IDC_PLAN, buf);
+#endif
             return TRUE;
         case IDCANCEL:
             EndDialog(w, 0);

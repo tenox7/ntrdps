@@ -20,6 +20,28 @@ IDF_MRSYS   NTRDPSFILE  "setup\\nt40\\ntrdpsmr.sys"
 IDF_MRDLL   NTRDPSFILE  "setup\\nt40\\ntrdpsmr.dll"
 IDF_MRDLL0  NTRDPSFILE  "setup\\nt40\\ntrdpsm0.dll"
 
+#ifdef NTRDPS_LOGIN
+IDD_SETUP DIALOG 0, 0, 268, 144
+STYLE DS_MODALFRAME | DS_3DLOOK | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "ntrdps Setup"
+FONT 8, "MS Sans Serif"
+BEGIN
+    LTEXT           "Install RDP (Remote Desktop) Server for WinSta0.",
+                    -1, 8, 6, 252, 10
+    AUTOCHECKBOX    "Require &authentication", IDC_CB_LOGIN, 8, 20, 252, 10,
+                    WS_TABSTOP
+    GROUPBOX        "Performance", -1, 4, 36, 260, 38
+    AUTORADIOBUTTON "&Mirror Driver (fast, requires kernel driver)",
+                    IDC_RB_DRIVER, 10, 47, 248, 10, WS_GROUP | WS_TABSTOP
+    AUTORADIOBUTTON "&GDI Polling (slow, user mode only)",
+                    IDC_RB_POLL, 10, 59, 248, 10
+    GROUPBOX        "Now", -1, 4, 78, 260, 40
+    LTEXT           "", IDC_STATUS, 10, 89, 248, 26
+    DEFPUSHBUTTON   "&Install", IDC_INSTALL, 51, 124, 50, 14
+    PUSHBUTTON      "&Remove", IDC_REMOVE, 109, 124, 50, 14
+    PUSHBUTTON      "Close", IDCANCEL, 167, 124, 50, 14
+END
+#else
 IDD_SETUP DIALOG 0, 0, 268, 258
 STYLE DS_MODALFRAME | DS_3DLOOK | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "ntrdps Setup"
@@ -27,14 +49,8 @@ FONT 8, "MS Sans Serif"
 BEGIN
     LTEXT           "ntrdps lets RDP clients (Remote Desktop) use the console of this computer.",
                     -1, 8, 6, 252, 10
-#ifdef NTRDPS_LOGIN
-    AUTOCHECKBOX    "&Ask for a user name and password   (recommended)",
-                    IDC_CB_LOGIN, 8, 17, 252, 10, WS_TABSTOP
-    LTEXT           "", IDC_LOGIN_TEXT, 20, 28, 240, 8
-#else
     LTEXT           "No encryption and no login: anyone who can reach TCP port 3389 gets the console. Use it only on a network you trust.",
                     -1, 8, 18, 252, 18
-#endif
     GROUPBOX        "How ntrdps watches the screen", -1, 4, 40, 260, 88
     AUTORADIOBUTTON "&Fast - display driver   (recommended)",
                     IDC_RB_DRIVER, 10, 51, 248, 10, WS_GROUP | WS_TABSTOP
@@ -52,6 +68,7 @@ BEGIN
     PUSHBUTTON      "&Remove", IDC_REMOVE, 109, 238, 50, 14
     PUSHBUTTON      "Close", IDCANCEL, 167, 238, 50, 14
 END
+#endif
 
 #ifdef NTRDPS_LOGIN
 IDD_ACCOUNT DIALOG 0, 0, 220, 120
