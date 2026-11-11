@@ -17,6 +17,16 @@ void rdp_set_allow_tls(int on);
 int  rdp_allow_tls(void);
 #endif
 
+#ifdef NTRDPS_LOGIN
+void rdp_set_login(int on, int plain);
+int  rdp_login_on(void);
+int  rdp_login_plain(void);
+
+void rdp_take_mode(SESSION *s, const CORE_FRAME *f);
+
+void rdp_console(SESSION *s, unsigned int locks);
+#endif
+
 int rdp_frame_depth(const CORE_FRAME *f);
 
 int rdp_same_mode(const SESSION *s, const CORE_FRAME *f);

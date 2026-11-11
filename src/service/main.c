@@ -16,6 +16,9 @@
 #include "version.h"
 #include "mrinst.h"
 #include "reader.h"
+#ifdef NTRDPS_LOGIN
+#include "auth.h"
+#endif
 
 #define SERVICE_NAME "ntrdps"
 #define DISPLAY_NAME "ntrdps RDP console server"
@@ -105,6 +108,21 @@ static int run(const char *mode, const CORE_BACKEND *backend)
                         (int) g_cfg.value[CFG_COMPRESSION_MAX]);
 #ifdef NTRDPS_TLS
     rdp_set_allow_tls((int) g_cfg.value[CFG_ALLOW_TLS]);
+#endif
+#ifdef NTRDPS_LOGIN
+    rdp_set_login((int) g_cfg.value[CFG_LOGIN],
+                  (int) g_cfg.value[CFG_LOGIN_PLAIN]);
+    if (g_cfg.value[CFG_LOGIN] == 0) {
+        log_msg(LOG_WARN, "login: off (setting Login 0): anyone who reaches "
+                "the port gets the console");
+    } else {
+        auth_start();
+        if (g_cfg.value[CFG_LOGIN_PLAIN] != 0) {
+            log_msg(LOG_WARN, "login: plain RDP clients may log in too; "
+                    "their password crosses the network in clear (setting "
+                    "LoginPlain 0 refuses them)");
+        }
+    }
 #endif
     rdp_start(&core_api, core);
     rc = net_serve((unsigned int) g_cfg.value[CFG_PORT], g_stop,
@@ -444,6 +462,144 @@ static int uninstall(void)
     return 0;
 }
 
+#ifdef NTRDPS_LOGIN
+
+static int read_line(WCHAR *out, unsigned int cap, int hide)
+{
+    HANDLE in = GetStdHandle(STD_INPUT_HANDLE);
+    char buf[2 * AUTH_PW_MAX + 2];
+    unsigned int n = 0, len = 0;
+    DWORD mode, got;
+    WCHAR wc;
+    char ch;
+    int any = 0;
+
+    if (GetConsoleMode(in, &mode)) {
+        if (hide) {
+            SetConsoleMode(in, mode & ~ENABLE_ECHO_INPUT);
+        }
+        while (ReadConsoleW(in, &wc, 1, &got, NULL) && got == 1) {
+            any = 1;
+            if (wc == '\n') {
+                break;
+            }
+            if (wc != '\r' && n + 1 < cap) {
+                out[n++] = wc;
+            }
+        }
+        if (hide) {
+            SetConsoleMode(in, mode);
+            printf("\n");
+        }
+        out[n] = 0;
+        return any;
+    }
+    while (ReadFile(in, &ch, 1, &got, NULL) && got == 1) {
+        any = 1;
+        if (ch == '\n') {
+            break;
+        }
+        if (ch != '\r' && len + 1 < sizeof(buf)) {
+            buf[len++] = ch;
+        }
+    }
+    n = len > 0 ? (unsigned int) MultiByteToWideChar(CP_ACP, 0, buf,
+                                                     (int) len, out,
+                                                     (int) cap - 1) : 0;
+    out[n] = 0;
+    memset(buf, 0, sizeof(buf));
+    return any;
+}
+
+static int set_login(void)
+{
+    WCHAR name[AUTH_NAME_MAX + 1], pw[AUTH_PW_MAX + 1], again[AUTH_PW_MAX + 1];
+    char lname[AUTH_NAME_MAX + 1];
+    int console;
+    DWORD mode, r;
+
+    console = GetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), &mode) != 0;
+    if (console) {
+        printf("The ntrdps account (NT 3.1 and 3.5 have no Windows "
+               "account check).\nAn empty user name removes it.\n"
+               "User name: ");
+    }
+    if (!read_line(name, AUTH_NAME_MAX + 1, 0)) {
+        printf("ntrdps: no user name on stdin\n");
+        return 2;
+    }
+    pw[0] = again[0] = 0;
+    if (name[0] != 0) {
+        if (console) {
+            printf("Password: ");
+        }
+        read_line(pw, AUTH_PW_MAX + 1, 1);
+        if (console) {
+            printf("Password again: ");
+            read_line(again, AUTH_PW_MAX + 1, 1);
+            if (lstrcmpW(pw, again) != 0) {
+                memset(pw, 0, sizeof(pw));
+                memset(again, 0, sizeof(again));
+                printf("ntrdps: the two passwords differ; nothing "
+                       "changed\n");
+                return 2;
+            }
+        }
+        if (pw[0] == 0) {
+            printf("ntrdps: an empty password is not allowed; nothing "
+                   "changed\n");
+            return 2;
+        }
+    }
+    r = auth_set_account(name, pw);
+    memset(pw, 0, sizeof(pw));
+    memset(again, 0, sizeof(again));
+    if (r != 0) {
+        SetLastError(r);
+        print_error("writing HKLM\\" CONFIG_KEY);
+        return 1;
+    }
+    auth_log_name(lname, sizeof(lname), name);
+    if (name[0] == 0) {
+        printf("ntrdps: the ntrdps account is removed.\n");
+    } else {
+        printf("ntrdps: the ntrdps account \"%s\" is set.\n", lname);
+    }
+    if (nt_version() >= 351) {
+        printf("Note: this NT has LogonUser, so ntrdps checks Windows "
+               "accounts; the ntrdps account is not used here.\n");
+    }
+    printf("It counts from the next start of ntrdps (net stop ntrdps, net "
+           "start ntrdps).\n");
+    return 0;
+}
+
+static int check_login(void)
+{
+    WCHAR name[AUTH_NAME_MAX + 1], pw[AUTH_PW_MAX + 1];
+    static const WCHAR none[] = { 0 };
+    int r;
+
+    if (!read_line(name, AUTH_NAME_MAX + 1, 0)) {
+        printf("ntrdps: no user name on stdin\n");
+        return 2;
+    }
+    pw[0] = 0;
+    read_line(pw, AUTH_PW_MAX + 1, 1);
+    config_read(&g_cfg, HKEY_LOCAL_MACHINE, CONFIG_KEY);
+    open_log(1);
+    auth_start();
+    r = auth_check(name, none, pw, "-checklogin");
+    memset(pw, 0, sizeof(pw));
+    printf("ntrdps: %s\n", r == AUTH_OK ? "yes: allowed" :
+           r == AUTH_BAD ? "no: wrong user name or password" :
+           r == AUTH_NOT_ADMIN ? "no: not an administrator" :
+           r == AUTH_NO_USER ? "no: no ntrdps account is set" :
+           "no: the check failed (see the line above)");
+    return r == AUTH_OK ? 0 : 1;
+}
+#endif
+
 static int usage(void)
 {
     printf("ntrdps %s - RDP console server for Windows NT\n"
@@ -477,6 +633,11 @@ static int usage(void)
            "  -installlayer     NT 3.1 - 3.51: install the layered driver "
            "(then reboot)\n"
            "  -uninstalllayer   switch the layered driver off (then reboot)\n"
+#ifdef NTRDPS_LOGIN
+           "  -setlogin     NT 3.1 / 3.5: set the ntrdps account (user name "
+           "and password)\n"
+           "  -checklogin   test a user name and password (from stdin)\n"
+#endif
            "Settings: registry key HKLM\\" CONFIG_KEY ", read at start.\n",
            NTRDPS_VERSION);
     return 2;
@@ -555,5 +716,13 @@ int main(int argc, char **argv)
     if (strcmp(argv[1], "-uninstalllayer") == 0) {
         return layer_uninstall();
     }
+#ifdef NTRDPS_LOGIN
+    if (strcmp(argv[1], "-setlogin") == 0) {
+        return set_login();
+    }
+    if (strcmp(argv[1], "-checklogin") == 0) {
+        return check_login();
+    }
+#endif
     return usage();
 }

@@ -5,30 +5,46 @@ on Intel x86, MIPS, Alpha and PowerPC.
 It is for pre-TSE NT (before Terminal Server Edition): an RDP client connects to WinStation 0,
 the console, so it is console only and not multi-user.
 
-**No login.** Anyone who can reach TCP port 3389 gets the console. Use it only on a network
-you trust. Tested in QEMU only, not yet on real hardware.
+**Login.** A client must log on before it gets the console (on by default; since release 0.6,
+x86 only so far - see Install):
+
+| NT version | Who may log on |
+|---|---|
+| NT 3.51, 4.0 | An account of the NT machine that is in the group Administrators. Windows checks the password. |
+| NT 3.1, 3.5 | The ntrdps account: one user name and password, set in the installer. These NT versions cannot check a Windows password for a program. |
+
+The client can send the user name and password itself (FreeRDP `/u: /p:`, rdesktop `-u -p`).
+If it sends none, or a wrong one, the client gets the logon dialog of Windows itself, on every
+NT version. 3 wrong tries or 60 s: the connection ends.
 
 Encryption is optional: a client that asks for TLS gets an encrypted connection; a client that
-asks for plain RDP gets plain text. This works on every CPU - x86, MIPS, Alpha and PowerPC.
-There is still no login either way.
+asks for plain RDP gets plain text, **the password too**. This works on every CPU - x86, MIPS,
+Alpha and PowerPC. To allow only TLS clients to log on: set the REG_DWORD `LoginPlain` = 0 in
+`HKEY_LOCAL_MACHINE\SOFTWARE\ntrdps`.
 
 Every copy of ntrdps has the same built-in TLS certificate, and its private key is public (it is
 in `src/tls`). So TLS stops someone who only listens. It does not stop someone who can get
-between you and the server.
+between you and the server: that one could read the password too.
+
+Use ntrdps only on a network you trust. Tested in QEMU only, not yet on real hardware.
 
 ## Install
 
 1. Download the installer for your CPU from [Releases](https://github.com/tenox7/ntrdps/releases).
    It finds the NT version itself.
 2. Log on as an administrator and run it.
-3. Click **Install**. Let it restart Windows NT.
+3. Leave **Ask for a user name and password** ticked. Click **Install**. On NT 3.1 and 3.5 it
+   then asks for the user name and password of the ntrdps account. Let it restart Windows NT.
 
-| CPU | Installer | Tested on |
-|---|---|---|
-| Intel x86 | `ntrdpset-i386.exe` | NT 3.1, 3.5, 3.51, 4.0 |
-| MIPS | `ntrdpset-mips.exe` | NT 3.1, 3.51, 4.0 |
-| Alpha | `ntrdpset-alpha.exe` | NT 3.1, 3.51, 4.0 |
-| PowerPC | `ntrdpset-ppc.exe` | NT 3.51, 4.0 |
+| CPU | Installer | Release | Tested on |
+|---|---|---|---|
+| Intel x86 | `ntrdpset-i386.exe` | 0.6 | NT 3.1, 3.5, 3.51, 4.0 |
+| MIPS | `ntrdpset-mips.exe` | 0.5, **no login** | NT 3.1, 3.51, 4.0 |
+| Alpha | `ntrdpset-alpha.exe` | 0.5, **no login** | NT 3.1, 3.51, 4.0 |
+| PowerPC | `ntrdpset-ppc.exe` | 0.5, **no login** | NT 3.51, 4.0 |
+
+MIPS, Alpha and PowerPC have no 0.6 installer yet. Release 0.5 has no login: anyone who can
+reach TCP port 3389 gets the console.
 
 It copies the files to `C:\NTRDPS`, adds the service `ntrdps` and the display driver,
 and starts the service. **Remove** takes all of it away again.
@@ -37,19 +53,28 @@ If Windows NT does not start after the restart: choose "Last Known Good" at boot
 That undoes the install. Then run the installer again and click **Remove**.
 
 In a batch file: `ntrdpset /install /q` (or `/remove`, `/status`). ERRORLEVEL: 0 done,
-1 not an administrator, 2 failed, 3 nothing to remove.
+1 not an administrator, 2 failed, 3 nothing to remove. More options for `/install`:
+
+| Option | What |
+|---|---|
+| `/user:NAME /password:PASSWORD` | NT 3.1 and 3.5: the ntrdps account. Needed there, unless an account is set already. |
+| `/nologin` | No login: anyone who can reach TCP port 3389 gets the console. |
+| `/poll` | No display driver: read the screen instead. |
+
+An update from 0.5.1 or earlier turns the login on.
 
 ## Connect
 
 | Client | Command |
 |---|---|
-| rdesktop | `rdesktop -e HOST` |
-| FreeRDP 3, plain | `xfreerdp3 /v:HOST /sec:rdp /cert:ignore /u:x /p:x` (or `sdl-freerdp`) |
-| FreeRDP 3, TLS | `xfreerdp3 /v:HOST /sec:tls /cert:ignore /u:x /p:x` |
-| mstsc 5.0, 5.1 | `mstsc /v:HOST` (Ctrl+Alt+End for Ctrl+Alt+Del) |
+| rdesktop 1.9 (asks for TLS) | `rdesktop -e -u NAME -p PASSWORD HOST` |
+| FreeRDP 3, TLS | `xfreerdp3 /v:HOST /sec:tls /cert:ignore /u:NAME /p:PASSWORD` (or `sdl-freerdp`) |
+| FreeRDP 3, plain | `xfreerdp3 /v:HOST /sec:rdp /cert:ignore /u:NAME /p:PASSWORD` |
+| mstsc 5.0, 5.1 (plain) | `mstsc /v:HOST`, then log on in the logon dialog (Ctrl+Alt+End for Ctrl+Alt+Del) |
 
-TLS works on every build - x86, MIPS, Alpha and PowerPC. mstsc 6.0 and later need TLS; ntrdps
-speaks it, but those clients are not tested yet.
+TLS works on every build - x86, MIPS, Alpha and PowerPC. Current Microsoft clients (mstsc 6.0
+and later, Windows App) use TLS. They were used with ntrdps (mstsc of Windows 10, Windows App on
+a Mac), but they are not in our tests yet.
 
 ## Build
 

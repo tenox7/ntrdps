@@ -60,6 +60,11 @@ static GET_THREAD_DESKTOP p_get_thread;
 static CLOSE_DESKTOP      p_close;
 static int                g_ok;
 static HANDLE             g_home;
+#ifdef NTRDPS_LOGIN
+static CRITICAL_SECTION   g_own_lock;
+static HANDLE             g_own;
+static char               g_own_name[64];
+#endif
 
 static DWORD last_error(void)
 {
@@ -239,6 +244,9 @@ int desktop_init(void)
     SET_PROCESS_WINSTA p_set_winsta;
     HANDLE winsta;
 
+#ifdef NTRDPS_LOGIN
+    InitializeCriticalSection(&g_own_lock);
+#endif
     user32 = LoadLibraryA("USER32.DLL");
     if (user32 == NULL) {
         log_msg(LOG_ERROR, "desktops: USER32.DLL does not load, error %lu",
@@ -461,11 +469,87 @@ int desktop_enter(DESKTOP_THREAD *t, const char *name)
     return 1;
 }
 
+#ifdef NTRDPS_LOGIN
+typedef HANDLE (WINAPI *CREATE_DESKTOP)(LPCSTR name, LPCSTR device,
+                                        PVOID devmode, DWORD flags,
+                                        DWORD access, PVOID sa);
+typedef HANDLE (WINAPI *CREATE_DESKTOP31)(LPCSTR name, LPCSTR device,
+                                          PVOID attr);
+
+static DWORD g_attr31[5] = { 20, 0, 0, 0, 0 };
+
+int desktop_enter_own(DESKTOP_THREAD *t, const char *name)
+{
+    HMODULE user32 = GetModuleHandleA("USER32.DLL");
+    CREATE_DESKTOP31 p_create31;
+    CREATE_DESKTOP p_create;
+    const char *what = "CreateDesktop";
+    DWORD err = 0;
+    HANDLE h;
+
+    if (!g_ok || user32 == NULL) {
+        return 0;
+    }
+    EnterCriticalSection(&g_own_lock);
+    if (g_own == NULL) {
+        if (g_nt31) {
+            p_create31 = (CREATE_DESKTOP31) GetProcAddress(user32,
+                                                         "CreateDesktopA");
+            g_own = p_create31 != NULL
+                ? p_create31(name, "DISPLAY", g_attr31) : NULL;
+            if (g_own != NULL) {
+                what = "OpenDesktop";
+                g_own = p_open31(name, MAXIMUM_ALLOWED);
+            }
+        } else {
+            p_create = (CREATE_DESKTOP) GetProcAddress(user32,
+                                                       "CreateDesktopA");
+            g_own = p_create != NULL
+                ? p_create(name, NULL, NULL, 0, MAXIMUM_ALLOWED, NULL)
+                : NULL;
+        }
+        if (g_own == NULL) {
+            err = last_error();
+        } else {
+            strncpy(g_own_name, name, sizeof(g_own_name) - 1);
+            log_msg(LOG_INFO, "desktops: made our own desktop \"%s\"",
+                    g_own_name);
+        }
+    }
+    h = g_own;
+    LeaveCriticalSection(&g_own_lock);
+    if (h == NULL) {
+        failed(t, err, what);
+        return 0;
+    }
+    if (t->first == NULL) {
+        t->first = p_get_thread(GetCurrentThreadId());
+    }
+    if (!p_set_thread(h)) {
+        failed(t, last_error(), "SetThreadDesktop");
+        return 0;
+    }
+    t->desk = h;
+    t->keep = 1;
+    t->error = 0;
+    strncpy(t->name, g_own_name, sizeof(t->name) - 1);
+    log_msg(LOG_INFO, "%s thread: on desktop \"%s\"", t->who, t->name);
+    return 1;
+}
+#endif
+
 void desktop_leave(DESKTOP_THREAD *t)
 {
     if (!g_ok || t->desk == NULL) {
         return;
     }
+#ifdef NTRDPS_LOGIN
+    if (t->keep) {
+        p_set_thread(t->first);
+        t->desk = NULL;
+        return;
+    }
+#endif
     if (t->first != NULL && p_set_thread(t->first) && !g_nt31) {
         p_close(t->desk);
     }

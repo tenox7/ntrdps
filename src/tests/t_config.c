@@ -35,6 +35,10 @@ static void test_defaults(void)
 #ifdef NTRDPS_TLS
     CHECK_EQ(c.value[CFG_ALLOW_TLS], 1);
 #endif
+#ifdef NTRDPS_LOGIN
+    CHECK_EQ(c.value[CFG_LOGIN], 1);
+    CHECK_EQ(c.value[CFG_LOGIN_PLAIN], 1);
+#endif
     CHECK(c.log_file[0] == '\0');
     CHECK_EQ(c.key_found, 0);
 }
@@ -68,6 +72,12 @@ static void test_take(void)
     CHECK_EQ(take_dword(&c, "AllowTLS", 0), CFG_SET);
     CHECK_EQ(c.value[CFG_ALLOW_TLS], 0);
 #endif
+#ifdef NTRDPS_LOGIN
+    CHECK_EQ(take_dword(&c, "Login", 0), CFG_SET);
+    CHECK_EQ(c.value[CFG_LOGIN], 0);
+    CHECK_EQ(take_dword(&c, "LoginPlain", 0), CFG_SET);
+    CHECK_EQ(c.value[CFG_LOGIN_PLAIN], 0);
+#endif
 
     config_defaults(&c);
     CHECK_EQ(take_dword(&c, "Port", 0), CFG_BAD_VALUE);
@@ -87,6 +97,12 @@ static void test_take(void)
 #ifdef NTRDPS_TLS
     CHECK_EQ(take_dword(&c, "AllowTLS", 2), CFG_BAD_VALUE);
     CHECK_EQ(c.value[CFG_ALLOW_TLS], 1);
+#endif
+#ifdef NTRDPS_LOGIN
+    CHECK_EQ(take_dword(&c, "Login", 2), CFG_BAD_VALUE);
+    CHECK_EQ(c.value[CFG_LOGIN], 1);
+    CHECK_EQ(take_dword(&c, "LoginPlain", 2), CFG_BAD_VALUE);
+    CHECK_EQ(c.value[CFG_LOGIN_PLAIN], 1);
 #endif
     CHECK_EQ(take_dword(&c, "ConsolePrompt", 0xFFFFFFFF), CFG_BAD_VALUE);
     CHECK_EQ(c.value[CFG_CONSOLE_PROMPT], 0);
@@ -233,6 +249,9 @@ static const char want1[] =
 #ifdef NTRDPS_TLS
     "AllowTLS 1, "
 #endif
+#ifdef NTRDPS_LOGIN
+    "Login 1, LoginPlain 1, "
+#endif
     "LogFile none";
 static const char want2[] =
     " INFO  settings from HKLM\\SOFTWARE\\ntrdps (\"set\": the value is "
@@ -241,6 +260,9 @@ static const char want2[] =
     "CompressionMaxType 1, "
 #ifdef NTRDPS_TLS
     "AllowTLS 1, "
+#endif
+#ifdef NTRDPS_LOGIN
+    "Login 1, LoginPlain 1, "
 #endif
     "LogFile \"C:\\ntrdps\\x.log\" (set)";
 static const char want3[] =

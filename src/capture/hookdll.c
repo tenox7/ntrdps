@@ -162,6 +162,29 @@ static void dll_path(char *path, size_t dir)
     }
 }
 
+#ifdef NTRDPS_TLS
+static int user_calls_system_threads(void)
+{
+    DWORD v = GetVersion(), csd = 0, type = 0, cb = sizeof(csd);
+    HKEY key;
+    LONG e;
+
+    if ((v & 0x80000000UL) != 0 || (v & 0xFF) != 4) {
+        return 0;
+    }
+    if (RegOpenKeyExA(HKEY_LOCAL_MACHINE,
+                      "SYSTEM\\CurrentControlSet\\Control\\Windows", 0,
+                      KEY_QUERY_VALUE, &key) != ERROR_SUCCESS) {
+        return 1;
+    }
+    e = RegQueryValueExA(key, "CSDVersion", NULL, &type, (BYTE *) &csd,
+                         &cb);
+    RegCloseKey(key);
+    return e != ERROR_SUCCESS || type != REG_DWORD ||
+           ((csd >> 8) & 0xFF) < 3;
+}
+#endif
+
 void hookdll_start(void)
 {
     HOOKDLL *k = &g_dll;
@@ -170,6 +193,15 @@ void hookdll_start(void)
     DWORD n, tid;
 
     memset(k, 0, sizeof(*k));
+#ifdef NTRDPS_TLS
+    if (user_calls_system_threads()) {
+        log_msg(LOG_INFO, "hooks: not used on NT 4.0 before Service Pack "
+                "3: Windows would call them in its own desktop thread too "
+                "and stop (STOP 0x1E). No pointer shapes and no change "
+                "hints from them");
+        return;
+    }
+#endif
     n = GetModuleFileNameA(NULL, path, MAX_PATH);
     if (n > 0 && n < MAX_PATH) {
         path[n] = '\0';

@@ -93,6 +93,14 @@ static void draw_seed(unsigned char *seed, size_t len)
     LeaveCriticalSection(&g_lock);
 }
 
+void tls_random(void *out, unsigned int len)
+{
+    if (!g_ready) {
+        tls_startup();
+    }
+    draw_seed((unsigned char *) out, len);
+}
+
 static void init_server(struct tls_conn *t)
 {
     br_ssl_engine_context *eng = &t->sc.eng;

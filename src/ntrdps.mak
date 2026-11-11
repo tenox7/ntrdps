@@ -23,9 +23,17 @@ BEARSSL_OBJS = \
         tls\bearssl\src\ssl_rec_gcm.obj tls\bearssl\src\ssl_scert_single_ec.obj tls\bearssl\src\ssl_server.obj \
         tls\bearssl\src\sysrng.obj tls\bearssl\src\x509_decoder.obj
 !ifdef TLS
-TLS_OBJS = tls\tls.obj tls\testcert.obj $(BEARSSL_OBJS)
+LOGIN_OBJS = core\auth.obj tls\pwhash.obj rdp\login.obj rdp\ldlg.obj \
+        rdp\lfont.obj
+TLS_OBJS = tls\tls.obj tls\testcert.obj $(LOGIN_OBJS) $(BEARSSL_OBJS)
+T_LOGIN  = rdp\login.obj rdp\lfont.obj tests\tauth.obj tests\tldlg.obj
+T_LOGIN_LIBS = user32.lib
+TLS_TESTS = tests\t_pwhash.exe
 !else
 TLS_OBJS =
+T_LOGIN =
+T_LOGIN_LIBS =
+TLS_TESTS =
 !endif
 
 OBJS  = service\main.obj service\log.obj service\config.obj core\net.obj \
@@ -37,7 +45,7 @@ OBJS  = service\main.obj service\log.obj service\config.obj core\net.obj \
 TESTS = tests\t_stream.exe tests\t_log.exe tests\t_frame.exe tests\t_proto.exe \
         tests\t_rle.exe tests\t_keymap.exe tests\t_config.exe \
         tests\t_reduce.exe tests\t_record.exe tests\t_mrshape.exe \
-        tests\t_orders.exe tests\t_draw.exe tests\t_mppc.exe
+        tests\t_orders.exe tests\t_draw.exe tests\t_mppc.exe $(TLS_TESTS)
 
 CORE  = core\core.obj core\draw.obj core\gstore.obj core\bstore.obj \
         capture\testpat.obj capture\palette.obj
@@ -136,6 +144,14 @@ tests\t_config.exe: tests\t_config.obj service\config.obj service\log.obj
 	    service\config.obj service\log.obj $(LIBS_MT) advapi32.lib
 
 T_PROTO = tests\t_proto.obj tests\tsess.obj tests\tinput.obj tests\rledec.obj \
-          $(PROTO) $(CORE) rdp\frame.obj rdp\stream.obj service\log.obj
+          $(PROTO) $(CORE) rdp\frame.obj rdp\stream.obj service\log.obj \
+          $(T_LOGIN)
 tests\t_proto.exe: $(T_PROTO)
-	$(LINK) $(LFLAGS) $(EXE_CON) -out:$@ $(T_PROTO) $(LIBS_MT)
+	$(LINK) $(LFLAGS) $(EXE_CON) -out:$@ @<<
+$(T_PROTO) $(LIBS_MT) $(T_LOGIN_LIBS)
+<<
+
+tests\t_pwhash.exe: tests\t_pwhash.obj tls\pwhash.obj $(BEARSSL_OBJS)
+	$(LINK) $(LFLAGS) $(EXE_CON) -out:$@ @<<
+tests\t_pwhash.obj tls\pwhash.obj $(BEARSSL_OBJS) $(LIBS_MT)
+<<

@@ -13,6 +13,8 @@ typedef struct tls_conn TLS;
 int  tls_startup(void);
 void tls_cleanup(void);
 
+void tls_random(void *out, unsigned int len);
+
 TLS *tls_server_start(SOCKET sock);
 
 int  tls_read(TLS *t, void *buf, int len);

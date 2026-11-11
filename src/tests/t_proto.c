@@ -21,6 +21,9 @@
 #include "palette.h"
 #include "tcheck.h"
 #include "tv_conn.h"
+#ifdef NTRDPS_LOGIN
+#include "login.h"
+#endif
 
 static SESSION g_s;
 static SESSION g_s2;
@@ -3288,11 +3291,374 @@ static void test_palette_capture(void)
     CHECK_EQ(palette_capture(pal), 0);
 }
 
+#ifdef NTRDPS_LOGIN
+
+extern int  t_auth_checks;
+extern int  t_auth_usable;
+extern int  t_auth_result;
+extern char t_auth_user[];
+
+static void feed_info(unsigned long flags, const char *domain,
+                      const char *user, const char *pw)
+{
+    const char *str[3];
+    unsigned char *p = g_pkt;
+    unsigned int n = 0, body, i, k;
+
+    str[0] = domain;
+    str[1] = user;
+    str[2] = pw;
+    hex(p, 14, "03 00 00 00 02 F0 80 64 00 03 03 EB 70 00");
+    n = 14;
+    body = n;
+    hex(p + n, 8, "40 00 00 00 00 00 00 00");
+    n += 8;
+    for (i = 0; i < 4; i++) {
+        p[n++] = (unsigned char) (flags >> (8 * i));
+    }
+    for (i = 0; i < 3; i++) {
+        p[n++] = (unsigned char) (2 * strlen(str[i]));
+        p[n++] = 0;
+    }
+    for (i = 0; i < 4; i++) {
+        p[n++] = 0;
+    }
+    for (i = 0; i < 3; i++) {
+        for (k = 0; str[i][k] != '\0'; k++) {
+            p[n++] = (unsigned char) str[i][k];
+            p[n++] = 0;
+        }
+        p[n++] = 0;
+        p[n++] = 0;
+    }
+    for (i = 0; i < 4; i++) {
+        p[n++] = 0;
+    }
+    p[body - 1] = (unsigned char) (n - body);
+    p[3] = (unsigned char) n;
+    rdp_packet(g_t, FRAME_TPKT, g_pkt, n);
+}
+
+static int pkt_has(const char *pw)
+{
+    unsigned int i, k, len = (g_pkt[2] << 8) | g_pkt[3];
+
+    for (i = 0; i + 2 * strlen(pw) <= len; i++) {
+        for (k = 0; pw[k] != '\0' && g_pkt[i + 2 * k] == (unsigned char) pw[k]
+                    && g_pkt[i + 2 * k + 1] == 0; k++) {
+        }
+        if (pw[k] == '\0') {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void key_pdu(unsigned int sc, unsigned int flags)
+{
+    char t[256];
+
+    sprintf(t, "03 00 00 30 02 F0 80 64 00 03 03 EB 70 22 22 00 17 00 EC 03"
+            " EA 03 01 00 00 01 14 00 1C 00 00 00 01 00 00 00 00 00 00 00"
+            " 04 00 %02X %02X %02X 00 00 00", flags & 0xFF, flags >> 8, sc);
+    feed(t);
+}
+
+static void press(unsigned int sc, unsigned int flags)
+{
+    key_pdu(sc, flags);
+    key_pdu(sc, flags | 0x8000);
+}
+
+static void type_text(const char *t)
+{
+    static const unsigned char sc[26] = {
+        0x1E, 0x30, 0x2E, 0x20, 0x12, 0x21, 0x22, 0x23, 0x17, 0x24, 0x25,
+        0x26, 0x32, 0x31, 0x18, 0x19, 0x10, 0x13, 0x1F, 0x14, 0x16, 0x2F,
+        0x11, 0x2D, 0x15, 0x2C
+    };
+
+    for (; *t != '\0'; t++) {
+        press(sc[*t - 'a'], 0);
+    }
+}
+
+static void mouse_pdu(unsigned int flags, unsigned int x, unsigned int y)
+{
+    char t[256];
+
+    sprintf(t, "03 00 00 30 02 F0 80 64 00 03 03 EB 70 22 22 00 17 00 EC 03"
+            " EA 03 01 00 00 01 14 00 1C 00 00 00 01 00 00 00 00 00 00 00"
+            " 01 80 %02X %02X %02X %02X %02X %02X", flags & 0xFF, flags >> 8,
+            x & 0xFF, x >> 8, y & 0xFF, y >> 8);
+    feed(t);
+}
+
+static int sent_errinfo(unsigned long code)
+{
+    unsigned int i;
+
+    for (i = 0; i + 8 <= g_s.tx_len; i++) {
+        if (g_s.tx[i] == 0x2F && g_s.tx[i + 1] == 0 && g_s.tx[i + 2] == 0 &&
+            g_s.tx[i + 3] == 0 && g_s.tx[i + 4] == code &&
+            g_s.tx[i + 5] == 0 && g_s.tx[i + 6] == 0 && g_s.tx[i + 7] == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void box_active(void)
+{
+    feed(CONFIRM_MSTSC);
+    feed(C_FOUR);
+    expect_all(__LINE__, SYNC, COOP, GRANTED, FONTMAP, NULL);
+    CHECK_EQ(g_s.state, ST_ACTIVE);
+    pointer_pump(&g_s);
+    TAKE(PTR_DEFAULT);
+    update_pump(&g_s);
+    TAKE(PALETTE);
+    clear_screen();
+    drain();
+}
+
+static void enter_check(void)
+{
+    press(0x1C, 0);
+    rdp_pump(&g_s);
+    take_bitmaps();
+    drain();
+    rdp_pump(&g_s);
+}
+
+static void test_login(void)
+{
+    unsigned char desk, face, title;
+    int calls, layout;
+
+    rdp_set_login(1, 1);
+    t_auth_checks = 0;
+    layout = MapVirtualKeyA(0x1E, 1) == 'A';
+    if (!layout) {
+        printf("t_proto: no keyboard layout here (MapVirtualKeyA): the "
+               "typing checks are left out\n");
+    }
+
+    joined();
+    feed_info(0x13B, "", "admin", "secret");
+    CHECK(!pkt_has("secret"));
+    EXPECT2(LICENSE, DEMAND_1024);
+    CHECK(g_s.login == NULL);
+    CHECK_EQ(t_auth_checks, 1);
+    CHECK(strcmp(t_auth_user, "admin") == 0);
+    CHECK_EQ(g_s.ci_pw[0], 0);
+    CHECK_EQ(g_s.ci_pw[1], 0);
+
+    joined();
+    feed_info(0x133, "", "admin", "secret");
+    CHECK(!pkt_has("secret"));
+    EXPECT2(LICENSE, DEMAND_1024);
+    CHECK(g_s.login != NULL);
+    CHECK_EQ(t_auth_checks, 1);
+    CHECK_EQ(g_s.ci_pw[0], 0);
+
+    joined();
+    feed_info(0x13B, "", "tenox", "pw");
+    EXPECT2(LICENSE, DEMAND_1024);
+    CHECK(g_s.login != NULL);
+    CHECK_EQ(t_auth_checks, 2);
+    CHECK(g_s.core != &core_api);
+    box_active();
+    CHECK_EQ(seen_count(), 1024UL * 768UL);
+    CHECK(picture_crc() != PICTURE_CRC);
+    desk = g_screen[0][0];
+    face = g_screen[310][512];
+    title = g_screen[283][512];
+    CHECK_EQ(g_screen[767][1023], desk);
+    CHECK(face != desk);
+    CHECK(title != desk && title != face);
+    testpat_set_mode(1024, 768, 8);
+    rdp_pump(&g_s);
+    EXPECT("");
+    CHECK_EQ(g_s.ev_nrects, 0);
+    calls = t_input_calls;
+    press(0x48, 0x0100);
+    press(0x01, 0);
+    type_text("admin");
+    press(0x0F, 0);
+    type_text("secrex");
+    press(0x0E, 0);
+    type_text("t");
+    CHECK_EQ(t_input_calls, calls);
+    if (layout) {
+        press(0x1C, 0);
+        rdp_pump(&g_s);
+        CHECK_EQ(t_auth_checks, 2);
+        CHECK(g_s.login != NULL);
+        take_bitmaps();
+        drain();
+        rdp_pump(&g_s);
+        CHECK_EQ(t_auth_checks, 3);
+        CHECK(strcmp(t_auth_user, "admin") == 0);
+        CHECK(g_s.login == NULL);
+        CHECK(g_s.core == &core_api);
+        CHECK_EQ(t_input_calls, calls + 1);
+        TAKE(PALETTE);
+        clear_screen();
+        take_bitmaps();
+        drain();
+        CHECK_EQ(seen_count(), 1024UL * 768UL);
+        CHECK_EQ(picture_crc(), PICTURE_CRC);
+        CHECK_EQ(g_s.ending, END_NO);
+        CHECK_EQ(g_s.state, ST_ACTIVE);
+        press(0x1E, 0);
+        CHECK_EQ(t_input_calls, calls + 3);
+    }
+
+    joined();
+    feed_info(0x133, "", "", "");
+    EXPECT2(LICENSE, DEMAND_1024);
+    box_active();
+    if (layout) {
+        enter_check();
+        CHECK_EQ(t_auth_checks, 3);
+        type_text("user");
+        press(0x1C, 0);
+        type_text("secret");
+        enter_check();
+        CHECK_EQ(t_auth_checks, 4);
+        CHECK(strcmp(t_auth_user, "user") == 0);
+        CHECK(g_s.login != NULL);
+        take_bitmaps();
+        drain();
+        type_text("secret");
+        enter_check();
+        CHECK_EQ(t_auth_checks, 5);
+        CHECK(g_s.login != NULL);
+        take_bitmaps();
+        drain();
+        type_text("secret");
+        press(0x1C, 0);
+        rdp_pump(&g_s);
+        g_s.tx_len = 0;
+        rdp_pump(&g_s);
+        CHECK_EQ(t_auth_checks, 6);
+        CHECK_EQ(g_s.ending, END_FLUSH);
+        CHECK(sent_errinfo(7));
+        CHECK(strstr(g_s.why, "wrong tries") != NULL);
+    }
+
+    joined();
+    feed_info(0x13B, "", "admin", "bad");
+    EXPECT2(LICENSE, DEMAND_1024);
+    box_active();
+    if (layout) {
+        calls = t_auth_checks;
+        type_text("bad");
+        enter_check();
+        take_bitmaps();
+        drain();
+        type_text("bad");
+        enter_check();
+        CHECK_EQ(t_auth_checks, calls + 2);
+        CHECK(g_s.login != NULL);
+        CHECK_EQ(g_s.ending, END_NO);
+        take_bitmaps();
+        drain();
+        type_text("bad");
+        press(0x1C, 0);
+        rdp_pump(&g_s);
+        g_s.tx_len = 0;
+        rdp_pump(&g_s);
+        CHECK_EQ(t_auth_checks, calls + 3);
+        CHECK_EQ(g_s.ending, END_FLUSH);
+        CHECK(sent_errinfo(7));
+    }
+
+    joined();
+    feed_info(0x13B, "", "admin", "bad");
+    EXPECT2(LICENSE, DEMAND_1024);
+    box_active();
+    if (layout) {
+        mouse_pdu(0x9000, 566, 359);
+        mouse_pdu(0x1000, 566, 359);
+        press(0x01, 0);
+        type_text("admin");
+        mouse_pdu(0x9000, 566, 391);
+        mouse_pdu(0x1000, 566, 391);
+        type_text("secret");
+        mouse_pdu(0x9000, 681, 461);
+        mouse_pdu(0x1000, 681, 461);
+        rdp_pump(&g_s);
+        take_bitmaps();
+        drain();
+        rdp_pump(&g_s);
+        CHECK(g_s.login == NULL);
+        CHECK(strcmp(t_auth_user, "admin") == 0);
+    }
+
+    joined();
+    feed(INFO_MSTSC);
+    EXPECT2(LICENSE, DEMAND_1024);
+    box_active();
+    rdp_check_time(&g_s, GetTickCount() + 1000);
+    CHECK_EQ(g_s.ending, END_NO);
+    rdp_check_time(&g_s, GetTickCount() + LOGIN_TIMEOUT_MS + 1000);
+    CHECK_EQ(g_s.ending, END_FLUSH);
+    CHECK(sent_errinfo(4));
+
+    t_auth_result = AUTH_ERROR;
+    joined();
+    feed_info(0x13B, "", "admin", "secret");
+    CHECK_EQ(g_s.ending, END_FLUSH);
+    CHECK(sent_errinfo(7));
+    CHECK(g_s.login == NULL);
+    t_auth_result = -1;
+
+    t_auth_usable = 0;
+    calls = t_auth_checks;
+    joined();
+    feed_info(0x13B, "", "admin", "secret");
+    CHECK_EQ(g_s.ending, END_FLUSH);
+    CHECK(sent_errinfo(7));
+    CHECK_EQ(t_auth_checks, calls);
+    t_auth_usable = 1;
+
+    rdp_set_login(1, 0);
+    reset();
+    feed("03 00 00 13 0E E0 00 00 00 00 00 01 00 08 00 00 00 00 00");
+    EXPECT("03 00 00 13 0E D0 00 00 12 34 00 03 00 08 00 01 00 00 00");
+    CHECK_EQ(g_s.ending, END_FLUSH);
+    reset();
+    feed("03 00 00 13 0E E0 00 00 00 00 00 01 00 08 00 01 00 00 00");
+    EXPECT(CC_NEG_TLS);
+    CHECK_EQ(g_s.ending, END_NO);
+    joined();
+    feed_info(0x13B, "", "admin", "secret");
+    CHECK(!pkt_has("secret"));
+    CHECK_EQ(g_s.ending, END_FLUSH);
+    CHECK(sent_errinfo(7));
+    CHECK_EQ(t_auth_checks, calls);
+
+    rdp_set_login(0, 1);
+    joined();
+    feed_info(0x13B, "", "tenox", "pw");
+    CHECK(!pkt_has("pw"));
+    EXPECT2(LICENSE, DEMAND_1024);
+    CHECK(g_s.login == NULL);
+    CHECK_EQ(t_auth_checks, calls);
+    CHECK_EQ(g_s.ci_pw[0], 0);
+}
+#endif
+
 int main(void)
 {
     void *core = core_start(&testpat_backend);
 
     rdp_start(&core_api, core);
+#ifdef NTRDPS_LOGIN
+    rdp_set_login(0, 1);
+#endif
     test_x224();
     test_connect();
     test_domain();
@@ -3320,6 +3686,9 @@ int main(void)
     test_seq();
     test_text();
     test_palette_capture();
+#ifdef NTRDPS_LOGIN
+    test_login();
+#endif
     rdp_done(&g_s);
     core_stop(core);
     return t_result("t_proto");

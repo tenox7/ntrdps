@@ -60,6 +60,41 @@ static void read_text(INS *in, unsigned int cb, unsigned int z, char *out,
     in_skip(in, cb - i + z);
 }
 
+#ifdef NTRDPS_LOGIN
+static void to_wide(const unsigned char *b, unsigned int cb, unsigned int z,
+                    WCHAR *out, unsigned int cap)
+{
+    unsigned int i, n = 0;
+
+    if (z == 2) {
+        for (i = 0; i + 2 <= cb && n + 1 < cap; i += 2) {
+            out[n] = (WCHAR) (b[i] | (b[i + 1] << 8));
+            if (out[n] == 0) {
+                break;
+            }
+            n++;
+        }
+    } else {
+        for (i = 0; i < cb && b[i] != 0; i++) {
+        }
+        n = i > 0 ? (unsigned int) MultiByteToWideChar(CP_ACP, 0,
+                                                       (LPCSTR) b, (int) i,
+                                                       out, (int) cap - 1)
+                  : 0;
+    }
+    out[n] = 0;
+}
+
+static void keep_text(const INS *in, unsigned int cb, unsigned int z,
+                      WCHAR *out, unsigned int cap)
+{
+    out[0] = 0;
+    if (in_left(in) >= cb) {
+        to_wide(in_ptr(in), cb, z, out, cap);
+    }
+}
+#endif
+
 static int read_info(SESSION *s, INS *in)
 {
     unsigned int len = in_left(in);
@@ -86,7 +121,13 @@ static int read_info(SESSION *s, INS *in)
                 "sizes need %lu (rdp-1 6.1 rule 4); the user name stays "
                 "empty", s->peer, len, need);
     } else {
+#ifdef NTRDPS_LOGIN
+        keep_text(in, cb[0], z, s->ci_domain, AUTH_NAME_MAX + 1);
+#endif
         read_text(in, cb[0], z, domain, sizeof(domain));
+#ifdef NTRDPS_LOGIN
+        keep_text(in, cb[1], z, s->ci_user, AUTH_NAME_MAX + 1);
+#endif
         read_text(in, cb[1], z, s->user, sizeof(s->user));
         in_skip(in, cb[2] + z);
         read_text(in, cb[3], z, shell, sizeof(shell));
@@ -94,10 +135,17 @@ static int read_info(SESSION *s, INS *in)
     }
 
     flag_names(names, s->info_flags);
+#ifdef NTRDPS_LOGIN
+    log_msg(LOG_INFO, "session %s: Client Info: user \"%s\", domain \"%s\"%s, "
+            "flags 0x%08lx (%s)", s->peer, s->user, domain,
+            cb[2] ? ", a password (for the login only, never logged)" : "",
+            s->info_flags, names);
+#else
     log_msg(LOG_INFO, "session %s: Client Info: user \"%s\", domain \"%s\"%s, "
             "flags 0x%08lx (%s)", s->peer, s->user, domain,
             cb[2] ? ", a password (not used, not kept)" : "",
             s->info_flags, names);
+#endif
     if (s->info_flags & INFO_COMPRESSION) {
         log_msg(LOG_INFO, "session %s: the client takes bulk compression "
                 "type %lu (%s)", s->peer, INFO_COMPR_TYPE(s->info_flags),
@@ -194,3 +242,44 @@ void sec_hide_password(unsigned char *p, unsigned int len)
     at = 5 + li + in.pos;
     memset(p + at, 0, cb_pass < len - at ? cb_pass : len - at);
 }
+
+#ifdef NTRDPS_LOGIN
+void sec_take_password(SESSION *s, unsigned char *p, unsigned int len)
+{
+    INS in;
+    unsigned int li = p[4];
+    unsigned int z, cb_domain, cb_user, cb_pass, at, n;
+
+    if ((p[5] & 0xF0) != 0xF0 || li < 2 || 5 + li > len) {
+        return;
+    }
+    in_init(&in, p + 5 + li, len - 5 - li);
+    if (in_u8(&in) != 0x64) {
+        return;
+    }
+    in_skip(&in, 2);
+    if (in_u16be(&in) != MCS_IO_CHANNEL) {
+        return;
+    }
+    in_skip(&in, 1);
+    per_read_len(&in);
+    if (!(in_u16le(&in) & SEC_INFO_PKT)) {
+        return;
+    }
+    in_skip(&in, 2 + 4);
+    z = (in_u32le(&in) & INFO_UNICODE) ? 2 : 1;
+    cb_domain = in_u16le(&in);
+    cb_user = in_u16le(&in);
+    cb_pass = in_u16le(&in);
+    in_skip(&in, 4 + cb_domain + z + cb_user + z);
+    if (in.fail) {
+        return;
+    }
+    at = 5 + li + in.pos;
+    n = cb_pass < len - at ? cb_pass : len - at;
+    if (s->state == ST_WAIT_JOINS) {
+        to_wide(p + at, n, z, s->ci_pw, AUTH_PW_MAX + 1);
+    }
+    memset(p + at, 0, n);
+}
+#endif

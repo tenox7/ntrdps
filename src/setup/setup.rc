@@ -27,8 +27,14 @@ FONT 8, "MS Sans Serif"
 BEGIN
     LTEXT           "ntrdps lets RDP clients (Remote Desktop) use the console of this computer.",
                     -1, 8, 6, 252, 10
+#ifdef NTRDPS_LOGIN
+    AUTOCHECKBOX    "&Ask for a user name and password   (recommended)",
+                    IDC_CB_LOGIN, 8, 17, 252, 10, WS_TABSTOP
+    LTEXT           "", IDC_LOGIN_TEXT, 20, 28, 240, 8
+#else
     LTEXT           "No encryption and no login: anyone who can reach TCP port 3389 gets the console. Use it only on a network you trust.",
                     -1, 8, 18, 252, 18
+#endif
     GROUPBOX        "How ntrdps watches the screen", -1, 4, 40, 260, 88
     AUTORADIOBUTTON "&Fast - display driver   (recommended)",
                     IDC_RB_DRIVER, 10, 51, 248, 10, WS_GROUP | WS_TABSTOP
@@ -46,3 +52,21 @@ BEGIN
     PUSHBUTTON      "&Remove", IDC_REMOVE, 109, 238, 50, 14
     PUSHBUTTON      "Close", IDCANCEL, 167, 238, 50, 14
 END
+
+#ifdef NTRDPS_LOGIN
+IDD_ACCOUNT DIALOG 0, 0, 220, 120
+STYLE DS_MODALFRAME | DS_3DLOOK | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "ntrdps account"
+FONT 8, "MS Sans Serif"
+BEGIN
+    LTEXT           "", IDC_ACC_TEXT, 8, 6, 204, 34
+    LTEXT           "&User name:", -1, 8, 47, 62, 8
+    EDITTEXT        IDC_LUSER, 72, 45, 140, 12, ES_AUTOHSCROLL
+    LTEXT           "&Password:", -1, 8, 63, 62, 8
+    EDITTEXT        IDC_LPW, 72, 61, 140, 12, ES_PASSWORD | ES_AUTOHSCROLL
+    LTEXT           "Password &again:", -1, 8, 79, 62, 8
+    EDITTEXT        IDC_LPW2, 72, 77, 140, 12, ES_PASSWORD | ES_AUTOHSCROLL
+    DEFPUSHBUTTON   "OK", IDOK, 52, 100, 50, 14
+    PUSHBUTTON      "Cancel", IDCANCEL, 118, 100, 50, 14
+END
+#endif

@@ -12,6 +12,9 @@ typedef struct {
     HANDLE      first;
     char        name[64];
     DWORD       error;
+#ifdef NTRDPS_LOGIN
+    int         keep;
+#endif
 } DESKTOP_THREAD;
 
 int desktop_init(void);
@@ -19,6 +22,10 @@ int desktop_init(void);
 int desktop_follow(DESKTOP_THREAD *t);
 
 int desktop_enter(DESKTOP_THREAD *t, const char *name);
+
+#ifdef NTRDPS_LOGIN
+int desktop_enter_own(DESKTOP_THREAD *t, const char *name);
+#endif
 
 void desktop_leave(DESKTOP_THREAD *t);
 

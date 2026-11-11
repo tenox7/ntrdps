@@ -12,6 +12,14 @@
 #define IDC_RB_DRIVER   1005
 #define IDC_RB_POLL     1006
 
+#define IDC_CB_LOGIN    1007
+#define IDC_LOGIN_TEXT  1008
+#define IDD_ACCOUNT     101
+#define IDC_ACC_TEXT    1011
+#define IDC_LUSER       1012
+#define IDC_LPW         1013
+#define IDC_LPW2        1014
+
 #define IDF_EXE31       201
 #define IDF_HOOK31      202
 #define IDF_LAYER31     203

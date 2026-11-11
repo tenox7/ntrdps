@@ -18,6 +18,9 @@
 #include "bitmaps.h"
 #include "pointer.h"
 #include "rdp.h"
+#ifdef NTRDPS_LOGIN
+#include "login.h"
+#endif
 
 const char *rdp_state_name(int state)
 {
@@ -222,6 +225,32 @@ int rdp_allow_tls(void)
 }
 #endif
 
+#ifdef NTRDPS_LOGIN
+static int g_login = 1;
+static int g_login_plain = 1;
+
+void rdp_set_login(int on, int plain)
+{
+    g_login = on ? 1 : 0;
+    g_login_plain = plain ? 1 : 0;
+}
+
+int rdp_login_on(void)
+{
+    return g_login;
+}
+
+int rdp_login_plain(void)
+{
+    return g_login_plain;
+}
+
+void rdp_take_mode(SESSION *s, const CORE_FRAME *f)
+{
+    take_mode(s, f);
+}
+#endif
+
 void rdp_start(const CORE_API *core, void *core_ctx)
 {
     g_core = core;
@@ -257,6 +286,10 @@ void rdp_init(SESSION *s)
 
 void rdp_done(SESSION *s)
 {
+#ifdef NTRDPS_LOGIN
+    login_free(s);
+    memset(s->ci_pw, 0, sizeof(s->ci_pw));
+#endif
     update_done(s);
     pointer_done(s);
     share_done(s);
@@ -272,7 +305,11 @@ void rdp_packet(SESSION *s, int kind, unsigned char *p, unsigned int len)
     INS mcs;
 
     if (kind == FRAME_TPKT && s->state < ST_WAIT_CONFIRM) {
+#ifdef NTRDPS_LOGIN
+        sec_take_password(s, p, len);
+#else
         sec_hide_password(p, len);
+#endif
     }
     log_hex("in", p, len);
     if (kind == FRAME_FASTPATH) {
@@ -310,20 +347,57 @@ static void stop_session(SESSION *s, int why)
     }
 }
 
+#ifdef NTRDPS_LOGIN
+void rdp_console(SESSION *s, unsigned int locks)
+{
+    int why = s->core->SessionReady(s->core_ctx, s->core_session);
+
+    if (why != 0) {
+        stop_session(s, why);
+        return;
+    }
+    s->core->KeyLocks(s->core_ctx, s->core_session, locks);
+    s->mode_due = 1;
+    pointer_changed(s);
+}
+#endif
+
 void rdp_data(SESSION *s, INS *in)
 {
     int why;
+#ifdef NTRDPS_LOGIN
+    unsigned long errinfo = 0;
+    const char *text = "";
+    int lr;
+#endif
 
     if (s->state == ST_WAIT_JOINS) {
         if (!sec_client_info(s, in)) {
             return;
         }
+#ifdef NTRDPS_LOGIN
+        why = 0;
+        lr = login_begin(s, &errinfo, &text);
+        if (lr == LOGIN_GO) {
+            why = s->core_session != NULL
+                ? s->core->SessionReady(s->core_ctx, s->core_session)
+                : CORE_STOP_BUSY;
+        }
+        if (!lic_send(s)) {
+            return;
+        }
+        if (lr == LOGIN_REFUSE) {
+            rdp_end(s, errinfo, text);
+            return;
+        }
+#else
         why = s->core_session != NULL
             ? s->core->SessionReady(s->core_ctx, s->core_session)
             : CORE_STOP_BUSY;
         if (!lic_send(s)) {
             return;
         }
+#endif
         if (why != 0) {
             stop_session(s, why);
         } else if (caps_demand_active(s)) {
@@ -351,6 +425,11 @@ void rdp_take_damage(SESSION *s)
     memcpy(at, s->ev_at, n * sizeof(at[0]));
     s->ev_nrects = 0;
     LeaveCriticalSection(&s->lock);
+#ifdef NTRDPS_LOGIN
+    if (s->login != NULL) {
+        return;
+    }
+#endif
     for (i = 0; i < n; i++) {
         update_damage(s, &d[i], at[i]);
     }
@@ -373,6 +452,12 @@ static void take_events(SESSION *s)
         stop_session(s, why);
         return;
     }
+#ifdef NTRDPS_LOGIN
+    if (s->login != NULL) {
+        rdp_take_damage(s);
+        return;
+    }
+#endif
     if (flags & SESS_EV_SHOW) {
         s->held = 0;
         flags |= SESS_EV_FRAME | SESS_EV_POINTER;
@@ -416,6 +501,11 @@ static void take_events(SESSION *s)
 
 void rdp_pump(SESSION *s)
 {
+#ifdef NTRDPS_LOGIN
+    if (s->login != NULL) {
+        login_pump(s);
+    }
+#endif
     take_events(s);
     if (s->mode_due && s->state == ST_ACTIVE && s->ending == END_NO) {
         reactivate(s);
@@ -450,6 +540,11 @@ void rdp_check_time(SESSION *s, DWORD now)
 {
     char why[80];
 
+#ifdef NTRDPS_LOGIN
+    if (s->login != NULL) {
+        login_check_time(s, now);
+    }
+#endif
     if (s->ending != END_NO || s->state == ST_ACTIVE ||
         now - s->phase_ms <= RDP_HANDSHAKE_MS) {
         return;

@@ -9,6 +9,9 @@
 #include "net.h"
 #include "core.h"
 #include "orders.h"
+#ifdef NTRDPS_LOGIN
+#include "auth.h"
+#endif
 
 #define ST_WAIT_CR      0
 #define ST_WAIT_CI      1
@@ -254,6 +257,12 @@ typedef struct {
 
     unsigned long  info_flags;
     char           user[64];
+#ifdef NTRDPS_LOGIN
+    WCHAR           ci_domain[AUTH_NAME_MAX + 1];
+    WCHAR           ci_user[AUTH_NAME_MAX + 1];
+    WCHAR           ci_pw[AUTH_PW_MAX + 1];
+    struct LOGIN_s *login;
+#endif
     struct MPPC_ENC_s *mppc;
 
     const CORE_API *core;

@@ -13,6 +13,10 @@ FILES = $(FILES31) \
         setup\nt35\ntrdps.exe setup\nt35\ntrdpshk.dll setup\nt35\ntrdpsly.dll \
         setup\nt40\ntrdpsmr.sys setup\nt40\ntrdpsmr.dll setup\nt40\ntrdpsm0.dll
 
+!IFDEF TLS
+SETUP_RCDEFS = -DNTRDPS_LOGIN
+!ENDIF
+
 !IFDEF CVTRES
 SETUP_RES = setup\setup.rbj
 !ELSE
@@ -25,7 +29,7 @@ setup\setup.obj: setup\setup.c setup\setup.h service\version.h
 	$(CC) $(CFLAGS_MT) $(SETUP_DEFS) -Iservice -Fosetup\setup.obj setup\setup.c
 
 setup\setup.res: setup\setup.rc setup\setup.h $(FILES)
-	rc -r $(SETUP_DEFS) -fo setup\setup.res setup\setup.rc
+	rc -r $(SETUP_DEFS) $(SETUP_RCDEFS) -fo setup\setup.res setup\setup.rc
 
 setup\setup.rbj: setup\setup.res
 	$(CVTRES) setup\setup.res -o setup\setup.rbj

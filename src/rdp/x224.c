@@ -19,6 +19,8 @@
 #define OUR_SRC_REF  0x1234
 #define RDP_NEG_REQ  0x01
 #define RDP_NEG_RSP  0x02
+#define RDP_NEG_FAILURE        0x03
+#define SSL_REQUIRED_BY_SERVER 0x00000001UL
 
 #define PROTOCOL_RDP  0x00000000UL
 #define PROTOCOL_SSL  0x00000001UL
@@ -86,6 +88,34 @@ void x224_connect(SESSION *s, const unsigned char *p, unsigned int len)
         }
 #endif
     }
+#ifdef NTRDPS_LOGIN
+    if (neg && sel != PROTOCOL_SSL && rdp_login_on() && !rdp_login_plain()) {
+        log_msg(LOG_WARN, "session %s: X.224 Connection Request, cookie %s, "
+                "RDP_NEG_REQ requestedProtocols 0x%lx: refused, only TLS "
+                "clients may log in (setting LoginPlain 0)%s", s->peer,
+                cookie, protocols, rdp_allow_tls() ? ""
+                : "; AllowTLS 0 refuses TLS too");
+        out_init(&o, cc, sizeof(cc));
+        out_u8(&o, 3);
+        out_u8(&o, 0);
+        out_u16be(&o, 19);
+        out_u8(&o, 14);
+        out_u8(&o, X224_CC);
+        out_u16be(&o, src_ref);
+        out_u16be(&o, OUR_SRC_REF);
+        out_u8(&o, 0);
+        out_u8(&o, RDP_NEG_FAILURE);
+        out_u8(&o, 0);
+        out_u16le(&o, 8);
+        out_u32le(&o, SSL_REQUIRED_BY_SERVER);
+        if (session_send(s, cc, out_len(&o))) {
+            session_end(s, 1, "plain RDP is not allowed (setting "
+                        "LoginPlain 0): RDP_NEG_FAILURE "
+                        "SSL_REQUIRED_BY_SERVER");
+        }
+        return;
+    }
+#endif
     if (neg) {
         log_msg(LOG_INFO, "session %s: X.224 Connection Request, cookie %s, "
                 "RDP_NEG_REQ requestedProtocols 0x%lx; we select 0x%lx (%s)",

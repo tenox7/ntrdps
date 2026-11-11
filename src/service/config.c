@@ -20,7 +20,11 @@ static const struct {
     { "Compression",   1,        0,         1 },
     { "CompressionMaxType", 1,   0,         1 },
 #ifdef NTRDPS_TLS
-    { "AllowTLS",      1,        0,         1 }
+    { "AllowTLS",      1,        0,         1 },
+#ifdef NTRDPS_LOGIN
+    { "Login",         1,        0,         1 },
+    { "LoginPlain",    1,        0,         1 }
+#endif
 #endif
 };
 

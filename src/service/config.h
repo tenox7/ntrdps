@@ -18,7 +18,13 @@
 #define CFG_COMPRESSION_MAX 7
 #ifdef NTRDPS_TLS
 #define CFG_ALLOW_TLS       8
+#ifdef NTRDPS_LOGIN
+#define CFG_LOGIN           9
+#define CFG_LOGIN_PLAIN     10
+#define CFG_DWORDS          11
+#else
 #define CFG_DWORDS          9
+#endif
 #else
 #define CFG_DWORDS          8
 #endif

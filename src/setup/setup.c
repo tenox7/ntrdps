@@ -81,6 +81,23 @@ static int       g_warn;
 static int       g_later;
 static int       g_driver = 1;
 
+#ifdef NTRDPS_LOGIN
+#define LOGIN_VALUE "Login"
+#define LUSER_VALUE "LoginUser"
+#define LHASH_VALUE "LoginHash"
+#define LNAME_MAX   64
+#define LPW_MAX     256
+#define NEED_ACCOUNT "Windows NT 3.1 and 3.5 cannot check Windows " \
+                     "passwords, so ntrdps needs its own user name and " \
+                     "password. Add /user:NAME /password:PASSWORD, or " \
+                     "/nologin for no login.\n"
+
+static int  g_login = 1;
+static int  g_lset;
+static char g_luser[2 * LNAME_MAX + 2];
+static char g_lpw[2 * LPW_MAX + 2];
+#endif
+
 static void say(const char *fmt, ...)
 {
     char line[1024];
@@ -686,6 +703,194 @@ static int run_ntrdps(char *opt, char *out, DWORD cb)
     return (int) code;
 }
 
+#ifdef NTRDPS_LOGIN
+static int own_account(void)
+{
+    HMODULE adv = GetModuleHandleA("advapi32.dll");
+
+    return adv == NULL || GetProcAddress(adv, "LogonUserW") == NULL;
+}
+
+static int get_login(void)
+{
+    HKEY k;
+    DWORD v = 1, type, cb = sizeof(v);
+
+    if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, CONFIG_KEY, 0, KEY_QUERY_VALUE,
+                      &k) == ERROR_SUCCESS) {
+        if (RegQueryValueExA(k, LOGIN_VALUE, NULL, &type, (LPBYTE) &v,
+                             &cb) != ERROR_SUCCESS || type != REG_DWORD) {
+            v = 1;
+        }
+        RegCloseKey(k);
+    }
+    return v != 0;
+}
+
+static int account_name(char *name, DWORD cb)
+{
+    HKEY k;
+    DWORD type, n = cb;
+    int ok = 0;
+
+    name[0] = '\0';
+    if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, CONFIG_KEY, 0, KEY_QUERY_VALUE,
+                      &k) != ERROR_SUCCESS) {
+        return 0;
+    }
+    if (RegQueryValueExA(k, LUSER_VALUE, NULL, &type, (LPBYTE) name,
+                         &n) == ERROR_SUCCESS && type == REG_SZ && n > 1) {
+        name[cb - 1] = '\0';
+        ok = has_value(CONFIG_KEY, LHASH_VALUE);
+    } else {
+        name[0] = '\0';
+    }
+    RegCloseKey(k);
+    return ok;
+}
+
+static int set_login_value(DWORD on)
+{
+    HKEY k;
+    DWORD disp;
+    LONG e;
+
+    e = RegCreateKeyExA(HKEY_LOCAL_MACHINE, CONFIG_KEY, 0, "",
+                        REG_OPTION_NON_VOLATILE, KEY_SET_VALUE, NULL, &k,
+                        &disp);
+    if (e == ERROR_SUCCESS) {
+        e = RegSetValueExA(k, LOGIN_VALUE, 0, REG_DWORD, (LPBYTE) &on,
+                           sizeof(on));
+        RegCloseKey(k);
+    }
+    SetLastError((DWORD) e);
+    return e == ERROR_SUCCESS;
+}
+
+static int run_setlogin(char *out, DWORD cb)
+{
+    static char input[sizeof(g_luser) + sizeof(g_lpw) + 8];
+    char exe[MAX_PATH + 16], cmd[MAX_PATH + 48], sink[256];
+    STARTUPINFOA si;
+    PROCESS_INFORMATION pi;
+    HANDLE rd, wr, child_wr, in_rd, in_wr, child_in;
+    DWORD got, n = 0, code = 0, len, done = 0;
+    BOOL ok;
+
+    out[0] = '\0';
+    sprintf(exe, "%s\\ntrdps.exe", g_dir);
+    if (strchr(exe, ' ') != NULL) {
+        sprintf(cmd, "\"%s\" -setlogin", exe);
+    } else {
+        sprintf(cmd, "%s -setlogin", exe);
+    }
+    sprintf(input, "%s\r\n%s\r\n", g_luser, g_lpw);
+    len = (DWORD) strlen(input);
+    if (!CreatePipe(&in_rd, &in_wr, NULL, 0)) {
+        memset(input, 0, sizeof(input));
+        return -1;
+    }
+    ok = WriteFile(in_wr, input, len, &done, NULL) && done == len;
+    memset(input, 0, sizeof(input));
+    CloseHandle(in_wr);
+    if (!ok || !DuplicateHandle(GetCurrentProcess(), in_rd,
+                                GetCurrentProcess(), &child_in, 0, TRUE,
+                                DUPLICATE_SAME_ACCESS)) {
+        CloseHandle(in_rd);
+        return -1;
+    }
+    CloseHandle(in_rd);
+    if (!CreatePipe(&rd, &wr, NULL, 0)) {
+        CloseHandle(child_in);
+        return -1;
+    }
+    if (!DuplicateHandle(GetCurrentProcess(), wr, GetCurrentProcess(),
+                         &child_wr, 0, TRUE, DUPLICATE_SAME_ACCESS)) {
+        CloseHandle(rd);
+        CloseHandle(wr);
+        CloseHandle(child_in);
+        return -1;
+    }
+    CloseHandle(wr);
+    memset(&si, 0, sizeof(si));
+    si.cb = sizeof(si);
+    si.dwFlags = STARTF_USESTDHANDLES;
+    si.hStdInput = child_in;
+    si.hStdOutput = child_wr;
+    si.hStdError = child_wr;
+    if (!CreateProcessA(exe, cmd, NULL, NULL, TRUE, DETACHED_PROCESS, NULL,
+                        g_dir, &si, &pi)) {
+        sprintf(out, "%s did not run (error %lu).\n", exe,
+                (unsigned long) GetLastError());
+        CloseHandle(child_wr);
+        CloseHandle(child_in);
+        CloseHandle(rd);
+        return -1;
+    }
+    CloseHandle(child_wr);
+    CloseHandle(child_in);
+    for (;;) {
+        char *dst = n + 1 < cb ? out + n : sink;
+        DWORD room = n + 1 < cb ? cb - 1 - n : sizeof(sink);
+
+        if (!ReadFile(rd, dst, room, &got, NULL) || got == 0) {
+            break;
+        }
+        if (dst != sink) {
+            n += got;
+        }
+    }
+    out[n] = '\0';
+    CloseHandle(rd);
+    WaitForSingleObject(pi.hProcess, WAIT_S * 1000);
+    if (!GetExitCodeProcess(pi.hProcess, &code)) {
+        code = (DWORD) -1;
+    }
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+    return (int) code;
+}
+
+static void login_setup(void)
+{
+    char out[1024], name[2 * LNAME_MAX + 2];
+    int rc;
+
+    if (!set_login_value((DWORD) g_login)) {
+        say("Cannot write the setting Login (error %lu).\n",
+            (unsigned long) GetLastError());
+        g_warn = 1;
+    }
+    if (!g_login) {
+        say("Login: off. Anyone who can reach TCP port 3389 gets the "
+            "console.\n");
+    } else if (!own_account()) {
+        say("Login: on. RDP clients log on with an administrator account "
+            "of this computer.\n");
+        if (g_lset) {
+            say("(/user: and /password: are not used: Windows NT 3.51 and "
+                "4.0 check Windows accounts.)\n");
+        }
+    } else if (g_lset) {
+        rc = run_setlogin(out, sizeof(out));
+        if (rc == 0) {
+            say("Login: on, with the ntrdps account \"%s\".\n", g_luser);
+        } else {
+            say("Login: the ntrdps account was not set. What ntrdps "
+                "said:\n");
+            say_text(out);
+            g_warn = 1;
+        }
+    } else {
+        account_name(name, sizeof(name));
+        say("Login: on, with the ntrdps account \"%s\" (unchanged).\n",
+            name);
+    }
+    memset(g_lpw, 0, sizeof(g_lpw));
+    g_lset = 0;
+}
+#endif
+
 static int driver_on(void)
 {
     if (g_ver == V40) {
@@ -747,6 +952,13 @@ static int do_install(void)
         say(NOT_ADMIN);
         return R_NOADMIN;
     }
+#ifdef NTRDPS_LOGIN
+    if (g_login && own_account() && !g_lset && !account_name(out, 256)) {
+        say(NEED_ACCOUNT);
+        CloseServiceHandle(scm);
+        return R_FAILED;
+    }
+#endif
     svc = OpenServiceA(scm, SVC_NAME, SERVICE_ALL_ACCESS);
     if (svc != NULL) {
         if (!svc_stop(svc)) {
@@ -811,6 +1023,9 @@ static int do_install(void)
             "ntrdps reads the screen. The driver files are here too, so you "
             "can switch it on later: see the README.\n");
     }
+#ifdef NTRDPS_LOGIN
+    login_setup();
+#endif
     if (!StartServiceA(svc, 0, NULL) &&
         GetLastError() != ERROR_SERVICE_ALREADY_RUNNING) {
         err = GetLastError();
@@ -1019,8 +1234,14 @@ static void status_text(char *t, int admin)
     } else if (!installed()) {
         strcpy(t, "Not installed.");
     } else {
+#ifdef NTRDPS_LOGIN
+        sprintf(t, "Installed in %s.\nService: %s. Display driver: %s. "
+                "Login: %s.", g_dir, state, driver_on() ? "on" : "off",
+                get_login() ? "on" : "off");
+#else
         sprintf(t, "Installed in %s.\nService: %s. Display driver: %s.",
                 g_dir, state, driver_on() ? "on" : "off");
+#endif
     }
     if (!admin) {
         strcat(t, "\nLog on as an administrator to install or remove.");
@@ -1095,11 +1316,102 @@ static void center(HWND w)
                  SWP_NOSIZE | SWP_NOZORDER);
 }
 
+#ifdef NTRDPS_LOGIN
+static void login_text(HWND w)
+{
+    SetDlgItemTextA(w, IDC_LOGIN_TEXT, !g_login ?
+                    "Off: anyone who can reach TCP port 3389 gets the "
+                    "console." : own_account() ?
+                    "Windows NT 3.1 and 3.5: Install asks for a user name "
+                    "and password." :
+                    "RDP clients log on with an administrator account of "
+                    "this computer.");
+}
+
+static BOOL CALLBACK account_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
+{
+    static char again[sizeof(g_lpw)];
+    char text[512], name[2 * LNAME_MAX + 2];
+
+    (void) lp;
+    switch (msg) {
+    case WM_INITDIALOG:
+        if (account_name(name, sizeof(name))) {
+            sprintf(text, "Windows NT 3.1 and 3.5 cannot check Windows "
+                    "passwords, so ntrdps has its own account: \"%.64s\".\n"
+                    "Leave all fields empty to keep it, or type a new user "
+                    "name and password.", name);
+        } else {
+            strcpy(text, "Windows NT 3.1 and 3.5 cannot check Windows "
+                   "passwords. Choose a user name and a password for "
+                   "ntrdps: RDP clients log on with them.");
+        }
+        SetDlgItemTextA(w, IDC_ACC_TEXT, text);
+        SendDlgItemMessageA(w, IDC_LUSER, EM_LIMITTEXT, LNAME_MAX, 0);
+        SendDlgItemMessageA(w, IDC_LPW, EM_LIMITTEXT, LPW_MAX, 0);
+        SendDlgItemMessageA(w, IDC_LPW2, EM_LIMITTEXT, LPW_MAX, 0);
+        center(w);
+        return TRUE;
+    case WM_COMMAND:
+        switch (LOWORD(wp)) {
+        case IDOK:
+            GetDlgItemTextA(w, IDC_LUSER, g_luser, sizeof(g_luser));
+            GetDlgItemTextA(w, IDC_LPW, g_lpw, sizeof(g_lpw));
+            GetDlgItemTextA(w, IDC_LPW2, again, sizeof(again));
+            text[0] = '\0';
+            g_lset = 0;
+            if (g_luser[0] == '\0' && g_lpw[0] == '\0' &&
+                again[0] == '\0' && account_name(name, sizeof(name))) {
+            } else if (g_luser[0] == '\0' || strchr(g_luser, '\\') != NULL) {
+                strcpy(text, "Type a user name (without \\).");
+            } else if (g_lpw[0] == '\0') {
+                strcpy(text, "Type a password.");
+            } else if (strcmp(g_lpw, again) != 0) {
+                strcpy(text, "The two passwords differ. Type them again.");
+                SetDlgItemTextA(w, IDC_LPW, "");
+                SetDlgItemTextA(w, IDC_LPW2, "");
+            } else {
+                g_lset = 1;
+            }
+            memset(again, 0, sizeof(again));
+            if (text[0] != '\0') {
+                memset(g_lpw, 0, sizeof(g_lpw));
+                MessageBoxA(w, text, TITLE, MB_OK | MB_ICONEXCLAMATION);
+                return TRUE;
+            }
+            EndDialog(w, IDOK);
+            return TRUE;
+        case IDCANCEL:
+            EndDialog(w, IDCANCEL);
+            return TRUE;
+        }
+        break;
+    }
+    return FALSE;
+}
+
+static int ask_login(HWND w)
+{
+    g_login = IsDlgButtonChecked(w, IDC_CB_LOGIN) ? 1 : 0;
+    g_lset = 0;
+    if (!g_login || g_ver == 0 || !own_account()) {
+        return 1;
+    }
+    return DialogBoxA(g_inst, MAKEINTRESOURCE(IDD_ACCOUNT), w,
+                      (DLGPROC) account_proc) == IDOK;
+}
+#endif
+
 static void act(HWND w, int id)
 {
     HCURSOR old;
     int r;
 
+#ifdef NTRDPS_LOGIN
+    if (id == IDC_INSTALL && !ask_login(w)) {
+        return;
+    }
+#endif
     EnableWindow(GetDlgItem(w, IDC_INSTALL), FALSE);
     EnableWindow(GetDlgItem(w, IDC_REMOVE), FALSE);
     old = SetCursor(LoadCursor(NULL, IDC_WAIT));
@@ -1124,6 +1436,11 @@ static BOOL CALLBACK dlg_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
         SetWindowTextA(w, "ntrdps " NTRDPS_VERSION " Setup");
         g_driver = 1;
         CheckRadioButton(w, IDC_RB_DRIVER, IDC_RB_POLL, IDC_RB_DRIVER);
+#ifdef NTRDPS_LOGIN
+        g_login = get_login();
+        CheckDlgButton(w, IDC_CB_LOGIN, g_login ? 1 : 0);
+        login_text(w);
+#endif
         center(w);
         refresh(w);
         return FALSE;
@@ -1133,6 +1450,12 @@ static BOOL CALLBACK dlg_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
         case IDC_REMOVE:
             act(w, LOWORD(wp));
             return TRUE;
+#ifdef NTRDPS_LOGIN
+        case IDC_CB_LOGIN:
+            g_login = IsDlgButtonChecked(w, IDC_CB_LOGIN) ? 1 : 0;
+            login_text(w);
+            return TRUE;
+#endif
         case IDC_RB_DRIVER:
         case IDC_RB_POLL:
             g_driver = LOWORD(wp) == IDC_RB_DRIVER;
@@ -1168,6 +1491,42 @@ static int has_opt(char *cmd, char *word)
     return 0;
 }
 
+#ifdef NTRDPS_LOGIN
+static int opt_value(char *cmd, char *name, char *out, size_t cap)
+{
+    size_t n = strlen(name), k = 0;
+    char *p = cmd;
+    int quoted;
+
+    out[0] = '\0';
+    while (*p != '\0') {
+        while (*p == ' ' || *p == '\t') {
+            p++;
+        }
+        if ((*p == '/' || *p == '-') && _strnicmp(p + 1, name, n) == 0) {
+            p += n + 1;
+            quoted = *p == '"';
+            if (quoted) {
+                p++;
+            }
+            while (*p != '\0' && (quoted ? *p != '"' :
+                                  (*p != ' ' && *p != '\t'))) {
+                if (k + 1 < cap) {
+                    out[k++] = *p;
+                }
+                p++;
+            }
+            out[k] = '\0';
+            return 1;
+        }
+        while (*p != '\0' && *p != ' ' && *p != '\t') {
+            p++;
+        }
+    }
+    return 0;
+}
+#endif
+
 static void to_stdout(char *text)
 {
     HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
@@ -1198,6 +1557,26 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmd, int show)
     quiet = has_opt(cmd, "q");
     install = has_opt(cmd, "install");
     g_driver = !has_opt(cmd, "poll") && !has_opt(cmd, "nodriver");
+#ifdef NTRDPS_LOGIN
+    g_login = !has_opt(cmd, "nologin");
+    r = opt_value(cmd, "user:", g_luser, sizeof(g_luser));
+    r += opt_value(cmd, "password:", g_lpw, sizeof(g_lpw));
+    if (install && r > 0) {
+        if (r != 2 || g_luser[0] == '\0' || g_lpw[0] == '\0' ||
+            strchr(g_luser, '\\') != NULL) {
+            memset(g_lpw, 0, sizeof(g_lpw));
+            say("Give both /user:NAME and /password:PASSWORD (a user name "
+                "without \\).\n");
+            if (quiet) {
+                to_stdout(g_log);
+            } else {
+                MessageBoxA(NULL, g_log, TITLE, MB_OK | MB_ICONEXCLAMATION);
+            }
+            return R_FAILED;
+        }
+        g_lset = 1;
+    }
+#endif
     if (has_opt(cmd, "status")) {
         status_text(g_log, can_admin());
         strcat(g_log, "\n");
