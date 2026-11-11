@@ -7,6 +7,9 @@
 #include <string.h>
 #include "version.h"
 #include "setup.h"
+#ifdef NTRDPS_LOGIN
+#include "mrchan.h"
+#endif
 
 #define TITLE       "ntrdps Setup"
 #define FILE_TYPE   "NTRDPSFILE"
@@ -899,6 +902,51 @@ static int driver_on(void)
     return has_value(LY_KEY, LY_VALUE);
 }
 
+#ifdef NTRDPS_LOGIN
+static int driver_loaded(void)
+{
+    ULONG q = MR_ESCAPE;
+    MR_IN in;
+    MR_OUT out;
+    HDC dc;
+    int r = 0;
+
+    dc = CreateDCA("DISPLAY", NULL, NULL, NULL);
+    if (dc == NULL) {
+        return 0;
+    }
+    if (ExtEscape(dc, QUERYESCSUPPORT, sizeof(q), (LPCSTR) &q, 0,
+                  NULL) != 0) {
+        memset(&in, 0, sizeof(in));
+        in.magic = MR_MAGIC;
+        in.version = MR_VERSION;
+        in.cmd = MR_CMD_GET;
+        in.pid = GetCurrentProcessId();
+        memset(&out, 0, sizeof(out));
+        if (ExtEscape(dc, MR_ESCAPE, sizeof(in), (LPCSTR) &in, sizeof(out),
+                      (LPSTR) &out) != 0 &&
+            out.magic == MR_MAGIC && out.version == MR_VERSION) {
+            r = (out.diag & MR_D_BMPSCREEN) ? 2 : 1;
+        }
+    }
+    DeleteDC(dc);
+    return r;
+}
+
+static const char *driver_state(void)
+{
+    int on = driver_on(), loaded = driver_loaded();
+
+    if (!on) {
+        return loaded ? "off after a restart" : "off";
+    }
+    if (!loaded) {
+        return "on after a restart";
+    }
+    return loaded == 2 ? "on, but GDI polling (video card)" : "on";
+}
+#endif
+
 static int driver_there(void)
 {
     char path[MAX_PATH + 16];
@@ -1237,9 +1285,9 @@ static void status_text(char *t, int admin)
         strcpy(t, "Not installed.");
     } else {
 #ifdef NTRDPS_LOGIN
-        sprintf(t, "Installed in %s.\nService: %s. Display driver: %s. "
-                "Login: %s.", g_dir, state, driver_on() ? "on" : "off",
-                get_login() ? "on" : "off");
+        sprintf(t, "Installed in %s.\nService: %s. Login: %s.\n"
+                "Display driver: %s.", g_dir, state,
+                get_login() ? "on" : "off", driver_state());
 #else
         sprintf(t, "Installed in %s.\nService: %s. Display driver: %s.",
                 g_dir, state, driver_on() ? "on" : "off");

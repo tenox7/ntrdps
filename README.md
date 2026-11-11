@@ -27,6 +27,9 @@ NTRDPS is based on the same protocol from NetMeeting but connects only to the co
 Q: Which RDP version is supported
 A: 4.0 / 5.x
 
+Q: Driver or GDI Polling
+A: The driver is faster. On NT 3.x, if it can't follow the video card, ntrdps falls back to GDI Polling. Setup shows which one is active.
+
 ## License
 
 MIT

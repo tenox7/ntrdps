@@ -64,6 +64,10 @@ typedef struct MR_PDEV {
     PVOID       patBits;
     HSURF       hsurfPat;
     SURFOBJ    *psoPat;
+#ifdef NTRDPS_FRAMEBUF
+    HSURF       hsurfBmp;
+    FLONG       flReal;
+#endif
 } MR_PDEV;
 
 typedef struct MR_PTR {

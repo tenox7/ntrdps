@@ -45,6 +45,7 @@
 #define MR_D_NORES      0x0100
 #define MR_D_NOEVENT    0x0200
 #define MR_D_SWPOINTER  0x0400
+#define MR_D_BMPHOOK    0x0800
 
 #define MR_RECTS        64
 

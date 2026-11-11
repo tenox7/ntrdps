@@ -3,13 +3,14 @@
 
 INC  = -Ilayer -Icommon
 OBJS = layer\layer.obj common\shadow.obj common\record.obj
+LYFLAGS = -DNTRDPS_FRAMEBUF
 
 all: ntrdpsly.dll
 
 {layer}.c{layer}.obj:
-	$(CC) $(CFLAGS) -DMR_LAYER $(INC) -Fo$@ $<
+	$(CC) $(CFLAGS) -DMR_LAYER $(LYFLAGS) $(INC) -Fo$@ $<
 {common}.c{common}.obj:
-	$(CC) $(CFLAGS) -DMR_LAYER $(INC) -Fo$@ $<
+	$(CC) $(CFLAGS) -DMR_LAYER $(LYFLAGS) $(INC) -Fo$@ $<
 
 ntrdpsly.exp: $(OBJS) $(LAYER_DEF)
 	$(IMPLIB) -def:$(LAYER_DEF) $(OBJS) -out:ntrdpsly.lib

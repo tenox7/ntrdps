@@ -15,6 +15,8 @@ FILES = $(FILES31) \
 
 !IFDEF TLS
 SETUP_RCDEFS = -DNTRDPS_LOGIN
+SETUP_INC    = -Idrivers\common
+SETUP_LIBS   = gdi32.lib
 !ENDIF
 
 !IFDEF CVTRES
@@ -26,7 +28,7 @@ SETUP_RES = setup\setup.res
 all: ntrdpset.exe
 
 setup\setup.obj: setup\setup.c setup\setup.h service\version.h
-	$(CC) $(CFLAGS_MT) $(SETUP_DEFS) -Iservice -Fosetup\setup.obj setup\setup.c
+	$(CC) $(CFLAGS_MT) $(SETUP_DEFS) -Iservice $(SETUP_INC) -Fosetup\setup.obj setup\setup.c
 
 setup\setup.res: setup\setup.rc setup\setup.h $(FILES)
 	rc -r $(SETUP_DEFS) $(SETUP_RCDEFS) -fo setup\setup.res setup\setup.rc
@@ -37,4 +39,4 @@ setup\setup.rbj: setup\setup.res
 ntrdpset.exe: setup\setup.obj $(SETUP_RES)
 	$(LINK) $(LFLAGS) $(EXE_GUI) \
 	    -out:ntrdpset.exe setup\setup.obj $(SETUP_RES) $(LIBS_MT) \
-	    user32.lib advapi32.lib
+	    user32.lib advapi32.lib $(SETUP_LIBS)

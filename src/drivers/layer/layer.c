@@ -15,6 +15,21 @@
 #define LY_ENGINE_MAX   0x00020000L
 #define LY_GLYPHS       1024
 
+#ifdef NTRDPS_FRAMEBUF
+#define LY_ASSOCS       16
+#define LY_BMPHOOKS     (HOOK_BITBLT | HOOK_STRETCHBLT | HOOK_TEXTOUT | \
+                         HOOK_PAINT | HOOK_STROKEPATH | HOOK_FILLPATH | \
+                         HOOK_STROKEANDFILLPATH | HOOK_COPYBITS)
+#define LY_PE_LFANEW    0x3c
+#define LY_PE_OPTHDR    24
+#define LY_PE_SIZEIMAGE 56
+#define LY_PE_NUMDIRS   92
+#define LY_PE_DATADIR   96
+#define LY_PE_IMPORT    1
+#define LY_PE_IMPDESC   20
+#define LY_PE_IMPMAX    64
+#endif
+
 typedef DHPDEV (APIENTRY *LYF_ENABLEPDEV)(DEVMODEW *, PWSTR, ULONG, HSURF *,
     ULONG, ULONG *, ULONG, DEVINFO *, PWSTR, PWSTR, HANDLE);
 typedef VOID  (APIENTRY *LYF_COMPLETEPDEV)(DHPDEV, HDEV);
@@ -52,9 +67,20 @@ typedef ULONG (APIENTRY *LYF_SAVESCREENBITS)(SURFOBJ *, ULONG, ULONG,
 
 #define REAL(type, i)   ((type) g_real[i])
 
+#ifdef NTRDPS_FRAMEBUF
+#define LY_CALL(type, i, hook, pso, pso2, eng, args) \
+    (ly_real(i, hook, pso, pso2) ? REAL(type, i) args : eng args)
+#else
+#define LY_CALL(type, i, hook, pso, pso2, eng, args)    REAL(type, i) args
+#endif
+
 #ifdef LY_NT31
 typedef BOOL (APIENTRY *LYF_ENABLEDRIVER)(ULONG, ULONG, DRVENABLEDATA *);
 typedef VOID (APIENTRY *LYF_DISABLEDRIVER)(VOID);
+#endif
+
+#ifdef NTRDPS_FRAMEBUF
+typedef BOOL (APIENTRY *LYF_ASSOCIATE)(HSURF, HDEV, FLONG);
 #endif
 
 typedef struct LY_USTR {
@@ -132,6 +158,18 @@ static WCHAR            g_names[256];
 #define LY_CALLER()     EngGetProcessHandle()
 #define LY_DIAG()       0
 #define LY_ON()         TRUE
+#endif
+#ifdef NTRDPS_FRAMEBUF
+static LYF_ASSOCIATE    g_assoc;
+static BOOL             g_iat;
+static HSURF            g_ahsurf[LY_ASSOCS];
+static FLONG            g_ahooks[LY_ASSOCS];
+static ULONG            g_anext;
+#ifndef LY_NT31
+static PFN             *g_table;
+static ULONG            g_ntable;
+#endif
+static void ly_slots(PFN *pfnTable, ULONG n);
 #endif
 static POINTL           g_ptl0[LY_GLYPHS];
 static POINTL          *g_ptl = g_ptl0;
@@ -288,6 +326,186 @@ static MR_PDEV *ly_pdev(DHPDEV dhpdev)
     }
     return NULL;
 }
+
+#ifdef NTRDPS_FRAMEBUF
+
+static MR_PDEV *ly_bmp(SURFOBJ *pso)
+{
+    ULONG i;
+
+    if (pso == NULL || pso->iType != STYPE_BITMAP || pso->hsurf == NULL) {
+        return NULL;
+    }
+    for (i = 0; i < MR_MAXPDEV; i++) {
+        if (g_pdev[i] != NULL && g_pdev[i]->hsurfBmp == pso->hsurf) {
+            return g_pdev[i];
+        }
+    }
+    return NULL;
+}
+
+static BOOL ly_devsurf(SURFOBJ *pso)
+{
+    return pso != NULL && pso->iType != STYPE_BITMAP &&
+           ly_pdev(pso->dhpdev) != NULL;
+}
+
+static BOOL ly_real(ULONG i, FLONG hook, SURFOBJ *pso, SURFOBJ *pso2)
+{
+    MR_PDEV *k;
+
+    if (g_real[i] == NULL) {
+        return FALSE;
+    }
+    k = ly_bmp(pso);
+    if (k == NULL) {
+        k = ly_bmp(pso2);
+    }
+    return k == NULL || (k->flReal & hook) != 0 || ly_devsurf(pso) ||
+           ly_devsurf(pso2);
+}
+
+static BOOL APIENTRY lyAssociate(HSURF hsurf, HDEV hdev, FLONG flHooks)
+{
+    FLONG fl = flHooks;
+    ULONG i;
+
+    if (g_init && hsurf != NULL) {
+        EnterCriticalSection(&g_lock);
+        for (i = 0; i < LY_ASSOCS && g_ahsurf[i] != hsurf; i++) {
+        }
+        if (i == LY_ASSOCS) {
+            i = g_anext;
+            g_anext = (g_anext + 1) % LY_ASSOCS;
+            g_ahsurf[i] = hsurf;
+            g_ahooks[i] = 0;
+        }
+        g_ahooks[i] |= flHooks;
+        for (i = 0; i < MR_MAXPDEV; i++) {
+            if (g_pdev[i] != NULL && g_pdev[i]->hsurfBmp == hsurf) {
+                g_pdev[i]->flReal |= flHooks;
+                fl |= LY_BMPHOOKS;
+            }
+        }
+        LeaveCriticalSection(&g_lock);
+    }
+    return g_assoc(hsurf, hdev, fl);
+}
+
+static BOOL ly_iat(HMODULE m)
+{
+    BYTE  *b = (BYTE *) m;
+    ULONG  pe, size, d, n, k, *id, *iat;
+    DWORD  old = 0;
+    BOOL   done = FALSE;
+
+    if (b == NULL || b[0] != 'M' || b[1] != 'Z') {
+        return FALSE;
+    }
+    pe = *(ULONG *) (b + LY_PE_LFANEW);
+    if (pe > 0x1000 || b[pe] != 'P' || b[pe + 1] != 'E' || b[pe + 2] != 0 ||
+        b[pe + 3] != 0 ||
+        *(ULONG *) (b + pe + LY_PE_OPTHDR + LY_PE_NUMDIRS) <= LY_PE_IMPORT) {
+        return FALSE;
+    }
+    size = *(ULONG *) (b + pe + LY_PE_OPTHDR + LY_PE_SIZEIMAGE);
+    d = *(ULONG *) (b + pe + LY_PE_OPTHDR + LY_PE_DATADIR + 8 * LY_PE_IMPORT);
+    for (n = 0; d != 0 && n < LY_PE_IMPMAX && d < size &&
+                size - d >= LY_PE_IMPDESC; n++, d += LY_PE_IMPDESC) {
+        id = (ULONG *) (b + d);
+        if (id[3] == 0) {
+            break;
+        }
+        if (id[4] == 0 || id[4] >= size) {
+            continue;
+        }
+        iat = (ULONG *) (b + id[4]);
+        for (k = 0; (size - id[4]) / sizeof(ULONG) > k && iat[k] != 0; k++) {
+            if (iat[k] == (ULONG) g_assoc &&
+                (VirtualProtect(&iat[k], sizeof(ULONG), PAGE_READWRITE,
+                                &old) ||
+                 VirtualProtect(&iat[k], sizeof(ULONG), PAGE_WRITECOPY,
+                                &old))) {
+                iat[k] = (ULONG) lyAssociate;
+                VirtualProtect(&iat[k], sizeof(ULONG), old, &old);
+                done = TRUE;
+            }
+        }
+    }
+    return done;
+}
+
+static void ly_bmp_init(HMODULE m)
+{
+    HMODULE w = GetModuleHandleA("winsrv.dll");
+    ULONG   i;
+
+    EnterCriticalSection(&g_lock);
+    for (i = 0; i < LY_ASSOCS; i++) {
+        g_ahsurf[i] = NULL;
+        g_ahooks[i] = 0;
+    }
+    g_anext = 0;
+    LeaveCriticalSection(&g_lock);
+    if (g_assoc == NULL && w != NULL) {
+        g_assoc = (LYF_ASSOCIATE) GetProcAddress(w, "EngAssociateSurface");
+    }
+    g_iat = g_assoc != NULL && ly_iat(m);
+}
+
+static BOOL ly_bmp_follow(MR_PDEV *ppdev, HSURF hsurf, ULONG type,
+                          ULONG fmt, SIZEL sizl)
+{
+    ULONG i;
+
+    if (type != STYPE_BITMAP || !g_iat || ppdev->hdev == NULL ||
+        fmt != ppdev->iFormat || sizl.cx != ppdev->cx ||
+        sizl.cy != ppdev->cy) {
+        return FALSE;
+    }
+#ifndef LY_NT31
+    if (g_table == NULL) {
+        return FALSE;
+    }
+#endif
+    for (i = 0; i < LY_ASSOCS && g_ahsurf[i] != hsurf; i++) {
+    }
+    if (i == LY_ASSOCS) {
+        return FALSE;
+    }
+#ifndef LY_NT31
+    ly_slots(g_table, g_ntable);
+#endif
+    ppdev->hsurfBmp = hsurf;
+    ppdev->flReal = g_ahooks[i];
+    ppdev->diag |= MR_D_BMPHOOK;
+    if (g_real[INDEX_DrvSetPointerShape] == NULL) {
+        ppdev->diag |= MR_D_SWPOINTER;
+    }
+    return TRUE;
+}
+
+static void ly_bmp_hook(DHPDEV dhpdev, HSURF hsurf, HDEV hdev)
+{
+    MR_PDEV *ppdev;
+
+    if (g_assoc(hsurf, hdev, LY_BMPHOOKS)) {
+        return;
+    }
+    EnterCriticalSection(&g_lock);
+    ppdev = ly_pdev(dhpdev);
+    if (ppdev != NULL && ppdev->hsurfBmp == hsurf) {
+        mr_shadow_free(ppdev);
+        ppdev->hsurf = NULL;
+        ppdev->hsurfBmp = NULL;
+        ppdev->flReal = 0;
+        ppdev->diag &= ~(ULONG) (MR_D_BMPHOOK | MR_D_SWPOINTER);
+        ppdev->diag |= MR_D_BMPSCREEN;
+    }
+    LeaveCriticalSection(&g_lock);
+}
+
+#endif
 
 static BOOL ly_nt(void)
 {
@@ -497,7 +715,11 @@ static VOID ly_surface(MR_PDEV *ppdev, HSURF hsurf)
     fmt = pso->iBitmapFormat;
     sizl = pso->sizlBitmap;
     EngUnlockSurface(pso);
-    if (type != STYPE_DEVICE) {
+    if (type != STYPE_DEVICE
+#ifdef NTRDPS_FRAMEBUF
+        && !ly_bmp_follow(ppdev, hsurf, type, fmt, sizl)
+#endif
+        ) {
         ppdev->diag |= MR_D_BMPSCREEN;
         g_cur = ppdev;
         return;
@@ -582,14 +804,27 @@ static HSURF APIENTRY lyEnableSurface(DHPDEV dhpdev)
 {
     HSURF    hsurf = REAL(LYF_ENABLESURFACE, INDEX_DrvEnableSurface)(dhpdev);
     MR_PDEV *ppdev;
+#ifdef NTRDPS_FRAMEBUF
+    HDEV     hdev = NULL;
+#endif
 
     if (hsurf != NULL) {
         EnterCriticalSection(&g_lock);
         ppdev = ly_pdev(dhpdev);
         if (ppdev != NULL) {
             ly_surface(ppdev, hsurf);
+#ifdef NTRDPS_FRAMEBUF
+            if (ppdev->hsurfBmp == hsurf) {
+                hdev = ppdev->hdev;
+            }
+#endif
         }
         LeaveCriticalSection(&g_lock);
+#ifdef NTRDPS_FRAMEBUF
+        if (hdev != NULL) {
+            ly_bmp_hook(dhpdev, hsurf, hdev);
+        }
+#endif
     }
     return hsurf;
 }
@@ -609,6 +844,16 @@ static VOID APIENTRY lyDisableSurface(DHPDEV dhpdev)
     }
     LeaveCriticalSection(&g_lock);
     REAL(LYF_DHPDEV, INDEX_DrvDisableSurface)(dhpdev);
+#ifdef NTRDPS_FRAMEBUF
+    EnterCriticalSection(&g_lock);
+    ppdev = ly_pdev(dhpdev);
+    if (ppdev != NULL) {
+        ppdev->hsurfBmp = NULL;
+        ppdev->flReal = 0;
+        ppdev->diag &= ~(ULONG) (MR_D_BMPHOOK | MR_D_SWPOINTER);
+    }
+    LeaveCriticalSection(&g_lock);
+#endif
 }
 
 static VOID APIENTRY lyAssertMode(DHPDEV dhpdev, BOOL bEnable)
@@ -650,8 +895,9 @@ static BOOL APIENTRY lyBitBlt(SURFOBJ *psoTrg, SURFOBJ *psoSrc,
     ROP4 rop4)
 {
     BOOL outer = ly_enter();
-    BOOL ok = REAL(LYF_BITBLT, INDEX_DrvBitBlt)(psoTrg, psoSrc, psoMask, pco,
-                  pxlo, prclTrg, pptlSrc, pptlMask, pbo, pptlBrush, rop4);
+    BOOL ok = LY_CALL(LYF_BITBLT, INDEX_DrvBitBlt, HOOK_BITBLT, psoTrg,
+                  psoSrc, EngBitBlt, (psoTrg, psoSrc, psoMask, pco, pxlo,
+                  prclTrg, pptlSrc, pptlMask, pbo, pptlBrush, rop4));
 
     if (outer && ok) {
         mrBitBlt(psoTrg, psoSrc, psoMask, pco, pxlo, prclTrg, pptlSrc,
@@ -665,8 +911,9 @@ static BOOL APIENTRY lyCopyBits(SURFOBJ *psoDest, SURFOBJ *psoSrc,
     CLIPOBJ *pco, XLATEOBJ *pxlo, RECTL *prclDest, POINTL *pptlSrc)
 {
     BOOL outer = ly_enter();
-    BOOL ok = REAL(LYF_COPYBITS, INDEX_DrvCopyBits)(psoDest, psoSrc, pco,
-                  pxlo, prclDest, pptlSrc);
+    BOOL ok = LY_CALL(LYF_COPYBITS, INDEX_DrvCopyBits, HOOK_COPYBITS,
+                  psoDest, psoSrc, EngCopyBits, (psoDest, psoSrc, pco, pxlo,
+                  prclDest, pptlSrc));
 
     if (outer && ok) {
         mrCopyBits(psoDest, psoSrc, pco, pxlo, prclDest, pptlSrc);
@@ -681,9 +928,10 @@ static BOOL APIENTRY lyStretchBlt(SURFOBJ *psoDest, SURFOBJ *psoSrc,
     ULONG iMode)
 {
     BOOL outer = ly_enter();
-    BOOL ok = REAL(LYF_STRETCHBLT, INDEX_DrvStretchBlt)(psoDest, psoSrc,
-                  psoMask, pco, pxlo, pca, pptlHTOrg, prclDest, prclSrc,
-                  pptlMask, iMode);
+    BOOL ok = LY_CALL(LYF_STRETCHBLT, INDEX_DrvStretchBlt, HOOK_STRETCHBLT,
+                  psoDest, psoSrc, EngStretchBlt, (psoDest, psoSrc, psoMask,
+                  pco, pxlo, pca, pptlHTOrg, prclDest, prclSrc, pptlMask,
+                  iMode));
 
     if (outer && ok) {
         mrStretchBlt(psoDest, psoSrc, psoMask, pco, pxlo, pca, pptlHTOrg,
@@ -697,8 +945,8 @@ static BOOL APIENTRY lyPaint(SURFOBJ *pso, CLIPOBJ *pco, BRUSHOBJ *pbo,
     POINTL *pptlBrushOrg, MIX mix)
 {
     BOOL outer = ly_enter();
-    BOOL ok = REAL(LYF_PAINT, INDEX_DrvPaint)(pso, pco, pbo, pptlBrushOrg,
-                                              mix);
+    BOOL ok = LY_CALL(LYF_PAINT, INDEX_DrvPaint, HOOK_PAINT, pso, NULL,
+                  EngPaint, (pso, pco, pbo, pptlBrushOrg, mix));
 
     if (outer && ok) {
         mrPaint(pso, pco, pbo, pptlBrushOrg, mix);
@@ -711,8 +959,9 @@ static BOOL APIENTRY lyFillPath(SURFOBJ *pso, PATHOBJ *ppo, CLIPOBJ *pco,
     BRUSHOBJ *pbo, POINTL *pptlBrushOrg, MIX mix, FLONG flOptions)
 {
     BOOL outer = ly_enter();
-    BOOL ok = REAL(LYF_FILLPATH, INDEX_DrvFillPath)(pso, ppo, pco, pbo,
-                  pptlBrushOrg, mix, flOptions);
+    BOOL ok = LY_CALL(LYF_FILLPATH, INDEX_DrvFillPath, HOOK_FILLPATH, pso,
+                  NULL, EngFillPath, (pso, ppo, pco, pbo, pptlBrushOrg, mix,
+                  flOptions));
 
     if (outer && ok && mr_target(pso) != NULL) {
         if (ppo != NULL) {
@@ -731,8 +980,9 @@ static BOOL APIENTRY lyStrokePath(SURFOBJ *pso, PATHOBJ *ppo, CLIPOBJ *pco,
     BOOL outer = ly_enter();
     LONG st0 = plineattrs != NULL ? plineattrs->elStyleState.l : 0;
     LONG st1;
-    BOOL ok = REAL(LYF_STROKEPATH, INDEX_DrvStrokePath)(pso, ppo, pco, pxo,
-                  pbo, pptlBrushOrg, plineattrs, mix);
+    BOOL ok = LY_CALL(LYF_STROKEPATH, INDEX_DrvStrokePath, HOOK_STROKEPATH,
+                  pso, NULL, EngStrokePath, (pso, ppo, pco, pxo, pbo,
+                  pptlBrushOrg, plineattrs, mix));
 
     if (outer && ok && mr_target(pso) != NULL) {
         st1 = plineattrs != NULL ? plineattrs->elStyleState.l : 0;
@@ -758,9 +1008,10 @@ static BOOL APIENTRY lyStrokeAndFillPath(SURFOBJ *pso, PATHOBJ *ppo,
     BOOL outer = ly_enter();
     LONG st0 = plineattrs != NULL ? plineattrs->elStyleState.l : 0;
     LONG st1;
-    BOOL ok = REAL(LYF_STROKEANDFILLPATH, INDEX_DrvStrokeAndFillPath)(pso,
-                  ppo, pco, pxo, pboStroke, plineattrs, pboFill,
-                  pptlBrushOrg, mixFill, flOptions);
+    BOOL ok = LY_CALL(LYF_STROKEANDFILLPATH, INDEX_DrvStrokeAndFillPath,
+                  HOOK_STROKEANDFILLPATH, pso, NULL, EngStrokeAndFillPath,
+                  (pso, ppo, pco, pxo, pboStroke, plineattrs, pboFill,
+                  pptlBrushOrg, mixFill, flOptions));
 
     if (outer && ok && mr_target(pso) != NULL) {
         st1 = plineattrs != NULL ? plineattrs->elStyleState.l : 0;
@@ -798,8 +1049,9 @@ static BOOL APIENTRY lyTextOut(SURFOBJ *pso, STROBJ *pstro, FONTOBJ *pfo,
             opq = *prclOpaque;
         }
     }
-    ok = REAL(LYF_TEXTOUT, INDEX_DrvTextOut)(pso, pstro, pfo, pco, prclExtra,
-             prclOpaque, pboFore, pboOpaque, pptlOrg, mix);
+    ok = LY_CALL(LYF_TEXTOUT, INDEX_DrvTextOut, HOOK_TEXTOUT, pso, NULL,
+             EngTextOut, (pso, pstro, pfo, pco, prclExtra, prclOpaque,
+             pboFore, pboOpaque, pptlOrg, mix));
     if (ok && ppdev != NULL) {
         if (kept) {
             ly_glyphs(pstro, TRUE);
@@ -1024,6 +1276,32 @@ static void ly_wrap(PFN *pfnTable, ULONG n)
     }
 }
 
+#ifdef NTRDPS_FRAMEBUF
+
+static const DRVFN g_draw[] = {
+    { INDEX_DrvStrokePath,          (PFN) lyStrokePath },
+    { INDEX_DrvFillPath,            (PFN) lyFillPath },
+    { INDEX_DrvStrokeAndFillPath,   (PFN) lyStrokeAndFillPath },
+    { INDEX_DrvPaint,               (PFN) lyPaint },
+    { INDEX_DrvBitBlt,              (PFN) lyBitBlt },
+    { INDEX_DrvCopyBits,            (PFN) lyCopyBits },
+    { INDEX_DrvStretchBlt,          (PFN) lyStretchBlt },
+    { INDEX_DrvTextOut,             (PFN) lyTextOut }
+};
+
+static void ly_slots(PFN *pfnTable, ULONG n)
+{
+    ULONG i;
+
+    for (i = 0; i < sizeof(g_draw) / sizeof(g_draw[0]); i++) {
+        if (g_draw[i].iFunc < n && g_real[g_draw[i].iFunc] == NULL) {
+            pfnTable[g_draw[i].iFunc] = g_draw[i].pfn;
+        }
+    }
+}
+
+#endif
+
 #ifndef LY_NT31
 
 BOOL APIENTRY DrvHookDriver(PWSZ pwszDriverName, ULONG cFuncs,
@@ -1038,6 +1316,19 @@ BOOL APIENTRY DrvHookDriver(PWSZ pwszDriverName, ULONG cFuncs,
         g_real[i] = i < n ? pfnTable[i] : NULL;
     }
     ly_wrap(pfnTable, n);
+#ifdef NTRDPS_FRAMEBUF
+    g_table = pfnTable;
+    g_ntable = n;
+    {
+        MEMORY_BASIC_INFORMATION mbi;
+
+        if (g_real[INDEX_DrvEnablePDEV] != NULL &&
+            VirtualQuery((PVOID) g_real[INDEX_DrvEnablePDEV], &mbi,
+                         sizeof(mbi)) != 0) {
+            ly_bmp_init((HMODULE) mbi.AllocationBase);
+        }
+    }
+#endif
     for (i = 0; pwszDriverName != NULL && pwszDriverName[i] != 0 &&
                 i < sizeof(g_name) / sizeof(g_name[0]) - 1; i++) {
         g_name[i] = pwszDriverName[i];
@@ -1052,6 +1343,10 @@ VOID APIENTRY DrvUnhookDriver(PWSZ pwszDriverName)
     if (g_hooked && pwszDriverName != NULL &&
         ly_same(pwszDriverName, g_name)) {
         g_hooked = FALSE;
+#ifdef NTRDPS_FRAMEBUF
+        g_table = NULL;
+        g_iat = FALSE;
+#endif
     }
 }
 
@@ -1342,6 +1637,11 @@ BOOL APIENTRY DrvEnableDriver(ULONG iEngineVersion, ULONG cj,
         if (!ly31_resources(self, g_hmod)) {
             g_diag31 |= MR_D_NORES;
         }
+#ifdef NTRDPS_FRAMEBUF
+        if (g_on) {
+            ly_bmp_init(g_hmod);
+        }
+#endif
     }
     enable = (LYF_ENABLEDRIVER) GetProcAddress(g_hmod, "DrvEnableDriver");
     real.iDriverVersion = 0;
@@ -1364,6 +1664,11 @@ BOOL APIENTRY DrvEnableDriver(ULONG iEngineVersion, ULONG cj,
     }
     if (g_on) {
         ly_wrap(tab, LY_NFUNC);
+#ifdef NTRDPS_FRAMEBUF
+        if (g_iat) {
+            ly_slots(tab, LY_NFUNC);
+        }
+#endif
     } else if (tab[INDEX_DrvEnablePDEV] != NULL) {
         tab[INDEX_DrvEnablePDEV] = (PFN) lyEnablePDEV;
     }
