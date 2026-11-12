@@ -19,14 +19,6 @@ Log on as an administrator, run `ntrdpset-<CPU>.exe`, click Install, restart if 
 - If the Layered Driver can't follow the video card, ntrdps uses GDI Polling. Setup shows which one is active. To switch, run Setup again.
 - Registry `HKLM\SOFTWARE\ntrdps`, REG_DWORD, read when the service starts: `Compression` 1 = on (default), 0 = off. `CompressionMaxType` 1 = 64 KB history (default), 0 = 8 KB.
 
-## Limitations
-
-| NT | Limitation |
-|---|---|
-| all | One client at a time. No clipboard, sound or drives. GDI Polling shows no outline while you drag a window. |
-| 3.1, 3.5 | No Windows accounts: one ntrdps account. |
-| 4.0 before SP3 | GDI Polling shows only the arrow pointer. Use the driver. |
-
 ## History and prior art
 
 While services and background processes on Windows NT could always assume role / run as specific user, the Windows desktop was single user and the local console only.
