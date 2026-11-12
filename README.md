@@ -17,7 +17,7 @@ Download the installer for your CPU from [Releases](https://github.com/tenox7/nt
 
 If you turn it off, anyone who can reach TCP port 3389 gets the console.
 
-**Performance:** NTRDPS can use a display driver or GDI Polling to see what changed on the screen. The driver (Mirror Driver on NT 4.0, Layered Driver on NT 3.x) is fast, because Windows tells it about everything it draws, so ntrdps can send small drawing commands instead of pictures. It works after a restart. GDI Polling needs no driver, but it is slow, because ntrdps reads the screen over and over and sends pictures. If the driver can't work with your video card, ntrdps uses GDI Polling. The Now box shows which one runs.
+**Performance:** NTRDPS can use a display driver or GDI Polling to see what changed on the screen. The driver (Mirror Driver on NT 4.0, Layered Driver on NT 3.x) is fast.
 
 From a script, without the window:
 
