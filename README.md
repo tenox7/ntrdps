@@ -6,7 +6,26 @@ Yes you can Remote Desktop to NT 3.1...
 
 ## Install
 
-Run `ntrdpset-<CPU>.exe`.
+Log on as an administrator, run `ntrdpset-<CPU>.exe`, click Install, restart if asked.
+
+- Require authentication (on by default): NT 3.51 / 4.0 log on with an account in Administrators. NT 3.1 / 3.5 have one ntrdps account, set during install.
+- Remove: run it again, click Remove.
+- Scripts: `ntrdpset /install /q`, `/remove /q`, `/status /q`. Add `/poll`, `/nologin` or `/user:NAME /password:PW` (NT 3.1 / 3.5).
+
+## Performance
+
+- Mirror Driver (NT 4.0) or Layered Driver (NT 3.x): fast, needs a restart.
+- GDI Polling: slow, no driver.
+- If the Layered Driver can't follow the video card, ntrdps uses GDI Polling. Setup shows which one is active. To switch, run Setup again.
+- Registry `HKLM\SOFTWARE\ntrdps`, REG_DWORD, read when the service starts: `Compression` 1 = on (default), 0 = off. `CompressionMaxType` 1 = 64 KB history (default), 0 = 8 KB.
+
+## Limitations
+
+| NT | Limitation |
+|---|---|
+| all | One client at a time. No clipboard, sound or drives. GDI Polling shows no outline while you drag a window. |
+| 3.1, 3.5 | No Windows accounts: one ntrdps account. |
+| 4.0 before SP3 | GDI Polling shows only the arrow pointer. Use the driver. |
 
 ## History and prior art
 
@@ -26,9 +45,6 @@ NTRDPS is based on the same protocol from NetMeeting but connects only to the co
 
 Q: Which RDP version is supported
 A: 4.0 / 5.x
-
-Q: Driver or GDI Polling
-A: The driver is faster. On NT 3.x, if it can't follow the video card, ntrdps falls back to GDI Polling. Setup shows which one is active.
 
 ## License
 
