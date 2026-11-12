@@ -4,6 +4,8 @@ A Remote Desktop (RDP) Server for Windows NT 3.1, 3.5, 3.51 and 4.0, pre-TSE Hyd
 
 Yes you can Remote Desktop to NT 3.1...
 
+![Windows NT 3.1 on Alpha over RDP](screenshot.png)
+
 ## Install
 
 Download the installer for your CPU from [Releases](https://github.com/tenox7/ntrdps/releases), run it and click Install.
