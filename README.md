@@ -6,18 +6,37 @@ Yes you can Remote Desktop to NT 3.1...
 
 ## Install
 
-Log on as an administrator, run `ntrdpset-<CPU>.exe`, click Install, restart if asked.
+Download the installer for your CPU from [Releases](https://github.com/tenox7/ntrdps/releases), run it and click Install.
 
-- Require authentication (on by default): NT 3.51 / 4.0 log on with an account in Administrators. NT 3.1 / 3.5 have one ntrdps account, set during install.
-- Remove: run it again, click Remove.
-- Scripts: `ntrdpset /install /q`, `/remove /q`, `/status /q`. Add `/poll`, `/nologin` or `/user:NAME /password:PW` (NT 3.1 / 3.5).
+![ntrdps Setup](setup.png)
+
+**Require authentication:** the RDP client has to log on with a user name and password.
+
+- NT 3.51 and 4.0: a Windows account in the Administrators group.
+- NT 3.1 and 3.5: they can't check Windows passwords, so Setup asks for a user name and password just for ntrdps.
+
+If you turn it off, anyone who can reach TCP port 3389 gets the console.
+
+From a script, without the window:
+
+    ntrdpset /install /q
+    ntrdpset /remove /q
+    ntrdpset /status /q
+
+Options for `/install`: `/poll` for GDI Polling, `/nologin` for no authentication, `/user:NAME /password:PW` for the NT 3.1 / 3.5 user name and password.
 
 ## Performance
 
-- Mirror Driver (NT 4.0) or Layered Driver (NT 3.x): fast, needs a restart.
-- GDI Polling: slow, no driver.
-- If the Layered Driver can't follow the video card, ntrdps uses GDI Polling. Setup shows which one is active. To switch, run Setup again.
-- Registry `HKLM\SOFTWARE\ntrdps`, REG_DWORD, read when the service starts: `Compression` 1 = on (default), 0 = off. `CompressionMaxType` 1 = 64 KB history (default), 0 = 8 KB.
+Setup installs a driver by default: the Mirror Driver on NT 4.0, the Layered Driver on NT 3.x. It is fast and works after a restart. GDI Polling needs no driver and no restart, but it is slow.
+
+If the Layered Driver can't work with your video card, ntrdps uses GDI Polling. The Now box in Setup shows which one runs.
+
+Compression settings, in `HKLM\SOFTWARE\ntrdps` (REG_DWORD). Restart the ntrdps service after a change.
+
+| Value | Default | What it does |
+|---|---|---|
+| `Compression` | 1 | 0 turns compression off: less CPU use on the NT machine, more network traffic |
+| `CompressionMaxType` | 1 | 1 = RDP 5.0 compression (64 KB history), 0 = RDP 4.0 compression (8 KB) |
 
 ## History and prior art
 
