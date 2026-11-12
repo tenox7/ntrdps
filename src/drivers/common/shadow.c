@@ -2009,6 +2009,13 @@ VOID mr_ptr_move(LONG x, LONG y)
     }
 }
 
+#ifdef NTRDPS_FRAMEBUF
+VOID mr_ptr_gdi(void)
+{
+    mr_ptr_changed();
+}
+#endif
+
 static ULONG mr_pointer_out(ULONG cjOut, PVOID pvOut)
 {
     MR_PTROUT *po = (MR_PTROUT *) pvOut;

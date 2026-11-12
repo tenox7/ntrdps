@@ -505,6 +505,23 @@ static void ly_bmp_hook(DHPDEV dhpdev, HSURF hsurf, HDEV hdev)
     LeaveCriticalSection(&g_lock);
 }
 
+static void ly_bmp_pointer(SURFOBJ *pso, SURFOBJ *psoMask, ULONG r)
+{
+    MR_PDEV *ppdev = ly_bmp(pso);
+    ULONG sw = MR_D_SWPOINTER;
+
+    if (ppdev == NULL || !(ppdev->diag & MR_D_BMPHOOK) || psoMask == NULL) {
+        return;
+    }
+    if (r == SPS_ACCEPT_NOEXCLUDE || r == SPS_ACCEPT_EXCLUDE) {
+        sw = 0;
+    }
+    if ((ppdev->diag & MR_D_SWPOINTER) != sw) {
+        ppdev->diag ^= MR_D_SWPOINTER;
+        mr_ptr_gdi();
+    }
+}
+
 #endif
 
 static BOOL ly_nt(void)
@@ -1176,6 +1193,9 @@ static ULONG APIENTRY lySetPointerShape(SURFOBJ *pso, SURFOBJ *psoMask,
     if (r == SPS_ACCEPT_NOEXCLUDE || r == SPS_ACCEPT_EXCLUDE) {
         mr_ptr_shape(psoMask, psoColor, pxlo, xHot, yHot, x, y, fl);
     }
+#ifdef NTRDPS_FRAMEBUF
+    ly_bmp_pointer(pso, psoMask, r);
+#endif
     ly_leave();
     return r;
 }

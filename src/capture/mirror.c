@@ -172,6 +172,9 @@ int mirror_take(RECT *r, int max, unsigned long *flags)
         return -1;
     }
     copy_counts();
+#ifdef NTRDPS_TLS
+    g_swpointer = (g_out.diag & MR_D_SWPOINTER) != 0;
+#endif
     *flags = g_out.flags;
     n = g_out.nrects;
     if (n > MR_RECTS) {
@@ -396,6 +399,9 @@ int mirror_flush(MR_FLUSHOUT *f, unsigned long size, unsigned long fl)
     }
     g_out = f->head;
     copy_counts();
+#ifdef NTRDPS_TLS
+    g_swpointer = (g_out.diag & MR_D_SWPOINTER) != 0;
+#endif
     g_st.skipped = f->skipped;
     g_st.saves = f->saves;
     g_st.savefail = f->savefail;

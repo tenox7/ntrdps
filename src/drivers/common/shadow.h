@@ -140,6 +140,9 @@ ULONG    mr_escape(MR_PDEV *ppdev, HDEV hdev, ULONG diag, MR_IN *pin,
 VOID     mr_ptr_shape(SURFOBJ *psoMask, SURFOBJ *psoColor, XLATEOBJ *pxlo,
                       LONG xHot, LONG yHot, LONG x, LONG y, FLONG fl);
 VOID     mr_ptr_move(LONG x, LONG y);
+#ifdef NTRDPS_FRAMEBUF
+VOID     mr_ptr_gdi(void);
+#endif
 
 BOOL APIENTRY mrBitBlt(SURFOBJ *psoTrg, SURFOBJ *psoSrc, SURFOBJ *psoMask,
     CLIPOBJ *pco, XLATEOBJ *pxlo, RECTL *prclTrg, POINTL *pptlSrc,
