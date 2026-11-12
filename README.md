@@ -17,6 +17,8 @@ Download the installer for your CPU from [Releases](https://github.com/tenox7/nt
 
 If you turn it off, anyone who can reach TCP port 3389 gets the console.
 
+**Performance:** NTRDPS can use a display driver or GDI Polling to see what changed on the screen. The driver (Mirror Driver on NT 4.0, Layered Driver on NT 3.x) is fast, because Windows tells it about everything it draws, so ntrdps can send small drawing commands instead of pictures. It works after a restart. GDI Polling needs no driver, but it is slow, because ntrdps reads the screen over and over and sends pictures. If the driver can't work with your video card, ntrdps uses GDI Polling. The Now box shows which one runs.
+
 From a script, without the window:
 
     ntrdpset /install /q
@@ -24,19 +26,6 @@ From a script, without the window:
     ntrdpset /status /q
 
 Options for `/install`: `/poll` for GDI Polling, `/nologin` for no authentication, `/user:NAME /password:PW` for the NT 3.1 / 3.5 user name and password.
-
-## Performance
-
-Setup installs a driver by default: the Mirror Driver on NT 4.0, the Layered Driver on NT 3.x. It is fast and works after a restart. GDI Polling needs no driver and no restart, but it is slow.
-
-If the Layered Driver can't work with your video card, ntrdps uses GDI Polling. The Now box in Setup shows which one runs.
-
-Compression settings, in `HKLM\SOFTWARE\ntrdps` (REG_DWORD). Restart the ntrdps service after a change.
-
-| Value | Default | What it does |
-|---|---|---|
-| `Compression` | 1 | 0 turns compression off: less CPU use on the NT machine, more network traffic |
-| `CompressionMaxType` | 1 | 1 = RDP 5.0 compression (64 KB history), 0 = RDP 4.0 compression (8 KB) |
 
 ## History and prior art
 
@@ -56,6 +45,9 @@ NTRDPS is based on the same protocol from NetMeeting but connects only to the co
 
 Q: Which RDP version is supported
 A: 4.0 / 5.x
+
+Q: How do I turn off compression
+A: Set `HKLM\SOFTWARE\ntrdps\Compression` (REG_DWORD) to 0, then `net stop ntrdps` and `net start ntrdps`. It saves CPU on the NT machine but sends more over the network.
 
 ## License
 
