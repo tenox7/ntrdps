@@ -9,6 +9,11 @@ typedef int                int32_t;
 typedef unsigned int       uint32_t;
 typedef __int64            int64_t;
 typedef unsigned __int64   uint64_t;
+#ifdef _WIN64
+typedef __int64            intptr_t;
+typedef unsigned __int64   uintptr_t;
+#else
 typedef int                intptr_t;
 typedef unsigned int       uintptr_t;
+#endif
 #endif

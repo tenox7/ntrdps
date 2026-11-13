@@ -217,7 +217,11 @@ int mirror_open(void)
         close_handles();
         return 0;
     }
+#ifdef _WIN64
+    if (!escape(MR_CMD_START, (ULONG) (ULONG_PTR) g_event) || g_out.status != MR_OK) {
+#else
     if (!escape(MR_CMD_START, (ULONG) g_event) || g_out.status != MR_OK) {
+#endif
         if (g_out.magic == MR_MAGIC && g_out.status == MR_NOSCREEN) {
             log_msg(LOG_INFO, "mirror: the layered driver cannot follow "
                     "this display driver (its screen is an engine "

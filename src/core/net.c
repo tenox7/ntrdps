@@ -105,7 +105,11 @@ static void log_process(int open)
     } else if (handle_info != NULL) {
         n = 0;
         for (h = 4; h < HANDLE_PROBE_END; h += 4) {
+#ifdef _WIN64
+            if (handle_info((HANDLE) (ULONG_PTR) h, &flags)) {
+#else
             if (handle_info((HANDLE) h, &flags)) {
+#endif
                 n++;
             }
         }

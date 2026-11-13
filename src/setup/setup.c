@@ -1045,6 +1045,13 @@ static int do_install(void)
         return R_FAILED;
     }
     for (i = 0; i < N_FILES; i++) {
+#ifdef WITH_NT50
+#ifdef _WIN64
+        if (g_files[i].id == IDF_MRDLL || g_files[i].id == IDF_MRDLL0) {
+            continue;
+        }
+#endif
+#endif
         if (g_files[i].vers & g_ver) {
             if (!put_file(&g_files[i])) {
                 CloseServiceHandle(scm);
@@ -1260,6 +1267,12 @@ static void plan_text(char *t)
             "4. Start the service. RDP clients can connect then.\n"
             "\n"
             "Remove takes all of it away again, the settings too.",
+#ifdef WITH_NT50
+#ifdef _WIN64
+            g_ver == V40 ? "ntrdps.exe, ntrdpshk.dll, ntrdpsmr.sys and "
+                           "ntrdpsm5.dll" :
+#endif
+#endif
             g_ver == V40 ? "ntrdps.exe, ntrdpshk.dll, ntrdpsmr.sys, "
                            "ntrdpsmr.dll and ntrdpsm0.dll" :
                            "ntrdps.exe, ntrdpshk.dll and ntrdpsly.dll",

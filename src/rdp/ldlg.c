@@ -35,6 +35,8 @@
 #define X_DWL_USER      8
 #define X_OBM_CLOSE     32754
 #define X_IMAGE_ICON    1
+#define X_IMAGE_BITMAP  0
+#define X_LR_CREATEDIBSECTION 0x2000
 #define X_COLOR_INACTIVECAPTIONTEXT 19
 #define X_COLOR_BTNHIGHLIGHT        20
 #define X_OBM_COMBO     32738
@@ -43,9 +45,11 @@
 
 #define LOOK_40 0
 #define LOOK_3X 1
+#define LOOK_50 2
 
 #define DLG_40      1450
 #define DLG_3X      200
+#define DLG_50      1500
 #define HELP_40     1950
 #define HELP_3X     515
 #define ICON_40     15
@@ -69,6 +73,21 @@
 #define I3X_OK2     211
 #define I3X_SHUT    300
 #define I3X_LOGO    102
+#define I50_SHUT    1501
+#define I50_USER    1502
+#define I50_PW      1503
+#define I50_DOMAIN  1504
+#define I50_DIALUP  1505
+#define I50_USERTXT 1506
+#define I50_PWTEXT  1507
+#define I50_DOMTEXT 1508
+#define I50_OPTIONS 1514
+#define I50_LEGAL   2400
+#define I50_KBD     2406
+#define STR_MORE    1800
+#define STR_LESS    1801
+#define BMP_BAND8   103
+#define BMP_BAND4   117
 
 #define X_VK_LSHIFT 0xA0
 #define X_VK_RMENU  0xA5
@@ -176,6 +195,8 @@ struct LDLG_s {
     HBITMAP          logo;
     HBITMAP          sysbox;
     HICON            icon;
+    HBITMAP          brand, band;
+    int              deep;
     int              self;
     SELST            sel[2];
     HBITMAP          arrow;
@@ -280,7 +301,7 @@ static void *copy_template(LDLG *d, int id)
     style = (DWORD *) (t + ((((WORD *) t)[0] == 1 &&
                              ((WORD *) t)[1] == 0xFFFF) ? 12 : 0));
     *style &= ~(DWORD) WS_VISIBLE;
-    if (d->look == LOOK_40) {
+    if (d->look != LOOK_3X) {
         *style |= X_DS_3DLOOK;
     }
     return t;
@@ -438,11 +459,19 @@ static void cancel(LDLG *d)
 
 static BOOL CALLBACK dlg_proc(HWND w, UINT m, WPARAM wp, LPARAM lp)
 {
+#ifdef _WIN64
+    LDLG *d = (LDLG *) GetWindowLongPtrA(w, DWLP_USER);
+#else
     LDLG *d = (LDLG *) GetWindowLongA(w, X_DWL_USER);
+#endif
 
     switch (m) {
     case WM_INITDIALOG:
+#ifdef _WIN64
+        SetWindowLongPtrA(w, DWLP_USER, (LONG_PTR) lp);
+#else
         SetWindowLongA(w, X_DWL_USER, (LONG) lp);
+#endif
         return FALSE;
     case WM_COMMAND:
         if (d == NULL || HIWORD(wp) != BN_CLICKED) {
@@ -492,6 +521,257 @@ static void show_fail(LDLG *d)
     SetFocus(pw);
 }
 
+static void move_ids(HWND dlg, const int *ids, int n, int dx, int dy,
+                     int size)
+{
+    HWND c;
+    RECT r;
+    int i;
+
+    for (i = 0; i < n; i++) {
+        if ((c = GetDlgItem(dlg, ids[i])) != NULL) {
+            GetWindowRect(c, &r);
+            MapWindowPoints(NULL, dlg, (POINT *) &r, 2);
+            SetWindowPos(c, NULL, r.left + dx, r.top + dy, 0, 0,
+                         SWP_NOZORDER | SWP_NOSIZE | SWP_NOACTIVATE);
+        }
+    }
+    if (size) {
+        GetWindowRect(dlg, &r);
+        SetWindowPos(dlg, NULL, 0, 0, r.right - r.left + dx,
+                     r.bottom - r.top + dy,
+                     SWP_NOZORDER | SWP_NOMOVE | SWP_NOACTIVATE);
+    }
+}
+
+static void item_rect(HWND dlg, int id, RECT *r)
+{
+    HWND c = GetDlgItem(dlg, id);
+
+    SetRectEmpty(r);
+    if (c != NULL) {
+        GetWindowRect(c, r);
+    }
+}
+
+static void hide_id(HWND dlg, int id)
+{
+    HWND c = GetDlgItem(dlg, id);
+
+    if (c != NULL) {
+        ShowWindow(c, SW_HIDE);
+        EnableWindow(c, FALSE);
+    }
+}
+
+static DWORD winlogon_dword(char *name)
+{
+    HKEY k;
+    DWORD v = 0, n = sizeof(v), type;
+
+    if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, "SOFTWARE\\Microsoft\\Windows NT"
+                      "\\CurrentVersion\\Winlogon", 0, KEY_READ, &k) !=
+        ERROR_SUCCESS) {
+        return 0;
+    }
+    if (RegQueryValueExA(k, name, NULL, &type, (LPBYTE) &v, &n) !=
+        ERROR_SUCCESS || type != REG_DWORD) {
+        v = 0;
+    }
+    RegCloseKey(k);
+    return v;
+}
+
+static int product(void)
+{
+    HKEY k;
+    char buf[256];
+    DWORD n = sizeof(buf) - 2, type;
+    const char *s;
+    int p = 0;
+
+    if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\"
+                      "Control\\ProductOptions", 0, KEY_READ, &k) !=
+        ERROR_SUCCESS) {
+        return 0;
+    }
+    if (RegQueryValueExA(k, "ProductType", NULL, &type, (LPBYTE) buf,
+                         &n) == ERROR_SUCCESS && type == REG_SZ) {
+        buf[n] = 0;
+        if (lstrcmpiA(buf, "WinNT") != 0) {
+            p = 1;
+        }
+    }
+    n = sizeof(buf) - 2;
+    if (p == 1 && RegQueryValueExA(k, "ProductSuite", NULL, &type,
+                                   (LPBYTE) buf, &n) == ERROR_SUCCESS &&
+        type == REG_MULTI_SZ) {
+        buf[n] = 0;
+        buf[n + 1] = 0;
+        for (s = buf; *s != 0; s += strlen(s) + 1) {
+            if (lstrcmpiA(s, "DataCenter") == 0) {
+                p = 3;
+            } else if (lstrcmpiA(s, "Enterprise") == 0 && p < 3) {
+                p = 2;
+            }
+        }
+    }
+    RegCloseKey(k);
+    return p;
+}
+
+static HBITMAP load_bmp(LDLG *d, int id)
+{
+    LOAD_IMAGE p_load;
+    HBITMAP b = NULL;
+
+    if (id == 0 ||
+        FindResourceA(d->mod, MAKEINTRESOURCE(id), RT_BITMAP) == NULL) {
+        return NULL;
+    }
+    p_load = (LOAD_IMAGE) GetProcAddress(GetModuleHandleA("USER32.DLL"),
+                                         "LoadImageA");
+    if (p_load != NULL) {
+        b = (HBITMAP) p_load(d->mod, MAKEINTRESOURCE(id), X_IMAGE_BITMAP,
+                             0, 0, X_LR_CREATEDIBSECTION);
+    }
+    if (b == NULL) {
+        b = LoadBitmapA(d->mod, MAKEINTRESOURCE(id));
+    }
+    return b;
+}
+
+static void setup_50(LDLG *d, int member)
+{
+    static const int all[12] = {
+        I50_USERTXT, I50_USER, I50_PWTEXT, I50_PW, I50_DOMTEXT, I50_DOMAIN,
+        I50_DIALUP, I50_KBD, IDOK, IDCANCEL, I50_SHUT, I50_OPTIONS
+    };
+    static const int nodom[6] = {
+        IDOK, IDCANCEL, I50_SHUT, I50_OPTIONS, I50_DIALUP, I50_KBD
+    };
+    static const int buttons[5] = {
+        IDOK, IDCANCEL, I50_SHUT, I50_OPTIONS, I50_KBD
+    };
+    static const int banner[4][2] = {
+        { 107, 111 }, { 0, 112 }, { 0, 119 }, { 0, 122 }
+    };
+    HWND dlg = d->dlg, c;
+    RECT r, r2;
+    WCHAR text[32];
+    BITMAP b1, b2;
+    HDC dc;
+    int opts = member || winlogon_dword("ShowLogonOptions") != 0;
+    int p, dy;
+
+    item_rect(dlg, I50_LEGAL, &r);
+    move_ids(dlg, all, 12, 0, -(int) (r.bottom - r.top), 1);
+    hide_id(dlg, I50_LEGAL);
+    if (!member) {
+        hide_id(dlg, I50_DOMTEXT);
+        hide_id(dlg, I50_DOMAIN);
+        item_rect(dlg, I50_PW, &r);
+        item_rect(dlg, I50_DOMAIN, &r2);
+        move_ids(dlg, nodom, 6, 0, -(int) (r2.bottom - r.bottom), 1);
+    }
+    hide_id(dlg, I50_DIALUP);
+    hide_id(dlg, I50_KBD);
+    item_rect(dlg, member ? I50_DOMAIN : I50_PW, &r);
+    item_rect(dlg, I50_DIALUP, &r2);
+    move_ids(dlg, buttons, 5, 0, -(int) (r2.bottom - r.bottom), 1);
+    if (!opts) {
+        item_rect(dlg, I50_SHUT, &r);
+        item_rect(dlg, I50_OPTIONS, &r2);
+        hide_id(dlg, I50_SHUT);
+        move_ids(dlg, buttons, 2, (int) (r2.left - r.left), 0, 0);
+    } else if ((c = GetDlgItem(dlg, I50_SHUT)) != NULL) {
+        EnableWindow(c, FALSE);
+    }
+    if ((c = GetDlgItem(dlg, I50_OPTIONS)) != NULL) {
+        if (LoadStringW(d->mod, opts ? STR_LESS : STR_MORE, text, 32) > 0) {
+            SetWindowTextW(c, text);
+        }
+        EnableWindow(c, FALSE);
+    }
+
+    dc = CreateCompatibleDC(NULL);
+    d->deep = dc != NULL && GetDeviceCaps(dc, BITSPIXEL) > 8;
+    if (dc != NULL) {
+        DeleteDC(dc);
+    }
+    p = product();
+    d->brand = d->deep ? load_bmp(d, banner[p][0]) : NULL;
+    if (d->brand == NULL) {
+        d->brand = load_bmp(d, banner[p][1]);
+    }
+    d->band = load_bmp(d, d->deep ? BMP_BAND8 : BMP_BAND4);
+    if (d->brand == NULL || d->band == NULL ||
+        GetObjectA(d->brand, sizeof(b1), &b1) == 0 ||
+        GetObjectA(d->band, sizeof(b2), &b2) == 0) {
+        log_msg(LOG_WARN, "session %s: login: no banner in msgina.dll",
+                d->peer);
+        if (d->brand != NULL) {
+            DeleteObject(d->brand);
+        }
+        if (d->band != NULL) {
+            DeleteObject(d->band);
+        }
+        d->brand = NULL;
+        d->band = NULL;
+        return;
+    }
+    dy = (int) (b1.bmHeight + b2.bmHeight);
+    for (c = GetWindow(dlg, GW_CHILD); c != NULL;
+         c = GetWindow(c, GW_HWNDNEXT)) {
+        GetWindowRect(c, &r);
+        MapWindowPoints(NULL, dlg, (POINT *) &r, 2);
+        SetWindowPos(c, NULL, r.left, r.top + dy, 0, 0,
+                     SWP_NOZORDER | SWP_NOSIZE | SWP_NOACTIVATE);
+    }
+    GetWindowRect(dlg, &r);
+    SetWindowPos(dlg, NULL, 0, 0, r.right - r.left, r.bottom - r.top + dy,
+                 SWP_NOZORDER | SWP_NOMOVE | SWP_NOACTIVATE);
+}
+
+static void paint_brand(LDLG *d, int cx)
+{
+    BITMAP b1, b2;
+    HDC bdc;
+    HGDIOBJ old;
+    HBRUSH br;
+    RECT r;
+    int x, w;
+
+    if (GetObjectA(d->brand, sizeof(b1), &b1) == 0 ||
+        GetObjectA(d->band, sizeof(b2), &b2) == 0 ||
+        (bdc = CreateCompatibleDC(d->mdc)) == NULL) {
+        return;
+    }
+    old = SelectObject(bdc, d->band);
+    w = b2.bmWidth < cx ? (int) b2.bmWidth : cx;
+    StretchBlt(d->mdc, 0, (int) b1.bmHeight, cx, (int) b2.bmHeight, bdc,
+               ((int) b2.bmWidth - w) / 2, 0, w, (int) b2.bmHeight, SRCCOPY);
+    SelectObject(bdc, d->brand);
+    x = (cx - (int) b1.bmWidth) / 2;
+    if (x < 0) {
+        x = 0;
+    }
+    BitBlt(d->mdc, x, 0, (int) b1.bmWidth, (int) b1.bmHeight, bdc, 0, 0,
+           SRCCOPY);
+    if (x != 0) {
+        br = CreateSolidBrush(d->deep ? RGB(90, 124, 223) : RGB(0, 0, 128));
+        if (br != NULL) {
+            SetRect(&r, 0, 0, x, (int) b1.bmHeight);
+            FillRect(d->mdc, &r, br);
+            SetRect(&r, cx - x - 1, 0, cx, (int) b1.bmHeight);
+            FillRect(d->mdc, &r, br);
+            DeleteObject(br);
+        }
+    }
+    SelectObject(bdc, old);
+    DeleteDC(bdc);
+}
+
 static int setup_dialog(LDLG *d)
 {
     LOAD_IMAGE p_load;
@@ -504,6 +784,10 @@ static int setup_dialog(LDLG *d)
         d->id_user = I40_USER;
         d->id_pw = I40_PW;
         d->id_dom = I40_DOMAIN;
+    } else if (d->look == LOOK_50) {
+        d->id_user = I50_USER;
+        d->id_pw = I50_PW;
+        d->id_dom = I50_DOMAIN;
     } else {
         d->id_user = I3X_USER;
         d->id_pw = I3X_PW;
@@ -545,6 +829,8 @@ static int setup_dialog(LDLG *d)
                 SendMessageW(w, X_STM_SETICON, (WPARAM) d->icon, 0);
             }
         }
+    } else if (d->look == LOOK_50) {
+        setup_50(d, member);
     } else {
         if (GetDlgItem(d->dlg, I3X_SHUT) != NULL) {
             if ((w = GetDlgItem(d->dlg, I3X_SHUT)) != NULL) {
@@ -1299,6 +1585,9 @@ static void client(LDLG *d, HWND w, const RECT *area, int erase)
     IntersectClipRect(d->mdc, 0, 0, cr.right, cr.bottom);
     if (erase) {
         SendMessageW(w, WM_ERASEBKGND, (WPARAM) d->mdc, 0);
+        if (w == d->dlg && d->brand != NULL) {
+            paint_brand(d, (int) cr.right);
+        }
     } else if (!d->self || !self_draw(d, w)) {
         SendMessageW(w, WM_PAINT, (WPARAM) d->mdc, 0);
     }
@@ -1349,7 +1638,7 @@ static void children(LDLG *d, HWND w, const RECT *area)
         GetWindowRect(c[i], &r);
         s2 = SaveDC(d->mdc);
         SetWindowOrgEx(d->mdc, area->left - r.left, area->top - r.top, NULL);
-        if (d->look == LOOK_40) {
+        if (d->look != LOOK_3X) {
             SendMessageW(c[i], X_WM_PRINT, (WPARAM) d->mdc, X_PRF_NONCLIENT);
         } else if (GetWindowLongA(c[i], GWL_STYLE) & WS_BORDER) {
             OffsetRect(&r, -r.left, -r.top);
@@ -1371,7 +1660,7 @@ static void draw_top(LDLG *d, HWND w, int active, const RECT *area)
     GetWindowRect(w, &r);
     s = SaveDC(d->mdc);
     SetWindowOrgEx(d->mdc, area->left - r.left, area->top - r.top, NULL);
-    if (d->look == LOOK_40) {
+    if (d->look != LOOK_3X) {
         if ((GetWindowLongA(w, GWL_STYLE) & WS_CAPTION) == WS_CAPTION) {
             SendMessageW(w, WM_NCACTIVATE, (WPARAM) active, 0);
         }
@@ -1607,12 +1896,20 @@ static int requests(LDLG *d)
 
 static LRESULT CALLBACK ctl_proc(HWND w, UINT m, WPARAM wp, LPARAM lp)
 {
+#ifdef _WIN64
+    LDLG *d = (LDLG *) GetWindowLongPtrA(w, 0);
+#else
     LDLG *d = (LDLG *) GetWindowLongA(w, 0);
+#endif
     DWORD now;
 
     switch (m) {
     case WM_NCCREATE:
+#ifdef _WIN64
+        SetWindowLongPtrA(w, 0, (LONG_PTR) ((CREATESTRUCT *) lp)->lpCreateParams);
+#else
         SetWindowLongA(w, 0, (LONG) ((CREATESTRUCT *) lp)->lpCreateParams);
+#endif
         break;
     case WM_LD_NEXT:
     case WM_LD_WAKE:
@@ -1669,6 +1966,12 @@ static int find_dialog(LDLG *d)
             log_msg(LOG_INFO, "session %s: login: the logon dialog of %s "
                     "(NT 3.x)", d->peer, files[i]);
             return DLG_3X;
+        }
+        if (FindResourceA(d->mod, MAKEINTRESOURCE(DLG_50), RT_DIALOG)) {
+            d->look = LOOK_50;
+            log_msg(LOG_INFO, "session %s: login: the logon dialog of %s "
+                    "(Windows 2000)", d->peer, files[i]);
+            return DLG_50;
         }
         FreeLibrary(d->mod);
         d->mod = NULL;
@@ -1762,7 +2065,11 @@ static int start(LDLG *d)
     if (!g_class) {
         memset(&wc, 0, sizeof(wc));
         wc.lpfnWndProc = ctl_proc;
+#ifdef _WIN64
+        wc.cbWndExtra = sizeof(LONG_PTR);
+#else
         wc.cbWndExtra = sizeof(LONG);
+#endif
         wc.hInstance = GetModuleHandleA(NULL);
         wc.lpszClassName = CLASS_NAME;
         if (!RegisterClassA(&wc) &&
@@ -1900,6 +2207,12 @@ static DWORD WINAPI ldlg_thread(LPVOID arg)
     }
     if (d->icon != NULL) {
         DestroyIcon(d->icon);
+    }
+    if (d->brand != NULL) {
+        DeleteObject(d->brand);
+    }
+    if (d->band != NULL) {
+        DeleteObject(d->band);
     }
     if (d->mod != NULL) {
         FreeLibrary(d->mod);

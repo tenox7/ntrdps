@@ -112,7 +112,11 @@ static void begin_batch(void)
     g_hkl = NULL;
     if (p_get_layout != NULL && tid != 0) {
         g_hkl = p_get_layout(tid);
+#ifdef _WIN64
+        layout = (DWORD) (ULONG_PTR) g_hkl;
+#else
         layout = (DWORD) g_hkl;
+#endif
     }
     if (g_hkl == NULL && GetKeyboardLayoutNameA(name)) {
         layout = strtoul(name, NULL, 16);

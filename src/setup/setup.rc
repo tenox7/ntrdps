@@ -8,6 +8,12 @@
 #define DS_3DLOOK 0x0004L
 #endif
 
+#ifdef WITH_W64
+IDF_EXE35   NTRDPSFILE  "setup\\w64\\ntrdps.exe"
+IDF_HOOK35  NTRDPSFILE  "setup\\w64\\ntrdpshk.dll"
+IDF_MRSYS   NTRDPSFILE  "setup\\w64\\ntrdpsmr.sys"
+IDF_MRDLL5  NTRDPSFILE  "setup\\w64\\ntrdpsm5.dll"
+#else
 #ifndef NO_NT31
 IDF_EXE31   NTRDPSFILE  "setup\\nt31\\ntrdps.exe"
 IDF_HOOK31  NTRDPSFILE  "setup\\nt31\\ntrdpshk.dll"
@@ -21,6 +27,7 @@ IDF_MRDLL   NTRDPSFILE  "setup\\nt40\\ntrdpsmr.dll"
 IDF_MRDLL0  NTRDPSFILE  "setup\\nt40\\ntrdpsm0.dll"
 #ifdef WITH_NT50
 IDF_MRDLL5  NTRDPSFILE  "setup\\nt50\\ntrdpsm5.dll"
+#endif
 #endif
 
 #ifdef NTRDPS_LOGIN

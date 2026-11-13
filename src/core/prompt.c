@@ -57,11 +57,19 @@ static void answer(HWND w, PROMPT *p, int a)
 
 static LRESULT CALLBACK box_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
 {
+#ifdef _WIN64
+    PROMPT *p = (PROMPT *) GetWindowLongPtrA(w, 0);
+#else
     PROMPT *p = (PROMPT *) GetWindowLongA(w, 0);
+#endif
 
     switch (msg) {
     case WM_NCCREATE:
+#ifdef _WIN64
+        SetWindowLongPtrA(w, 0, (LONG_PTR) ((CREATESTRUCT *) lp)->lpCreateParams);
+#else
         SetWindowLongA(w, 0, (LONG) ((CREATESTRUCT *) lp)->lpCreateParams);
+#endif
         break;
     case WM_PAINT:
         paint(w, p);
@@ -109,7 +117,11 @@ static HWND make_button(HWND parent, const char *text, int id, DWORD kind,
 {
     return CreateWindowExA(0, "BUTTON", text,
                            WS_CHILD | WS_VISIBLE | WS_TABSTOP | kind,
+#ifdef _WIN64
+                           x, y, cx, cy, parent, (HMENU) (INT_PTR) id,
+#else
                            x, y, cx, cy, parent, (HMENU) id,
+#endif
                            GetModuleHandleA(NULL), NULL);
 }
 
@@ -127,7 +139,11 @@ static HWND make_box(PROMPT *p)
 
     memset(&wc, 0, sizeof(wc));
     wc.lpfnWndProc = box_proc;
+#ifdef _WIN64
+    wc.cbWndExtra = sizeof(LONG_PTR);
+#else
     wc.cbWndExtra = sizeof(LONG);
+#endif
     wc.hInstance = GetModuleHandleA(NULL);
     wc.hCursor = LoadCursorA(NULL, IDC_ARROW);
     wc.hbrBackground = (HBRUSH) (COLOR_BTNFACE + 1);

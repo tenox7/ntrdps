@@ -95,7 +95,11 @@ unsigned char *reader_buffer(unsigned long bytes)
     reader_free();
     g_serial++;
     map_name(name, (unsigned long) GetCurrentProcessId(), g_serial);
+#ifdef _WIN64
+    g_map = CreateFileMappingA(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE,
+#else
     g_map = CreateFileMappingA((HANDLE) 0xFFFFFFFFUL, NULL, PAGE_READWRITE,
+#endif
                                0, RD_HEAD + bytes, name);
     if (g_map != NULL) {
         g_sh = (RD_SHARED *) MapViewOfFile(g_map, FILE_MAP_WRITE, 0, 0, 0);

@@ -47,7 +47,11 @@ static void read_failed(CURSOR *c, HCURSOR h, const char *what)
         c->read_error = 1;
         log_msg(LOG_WARN, "cursor: the shape of cursor 0x%08lx: %s failed, "
                 "error %lu; clients show their default arrow. Logged once.",
+#ifdef _WIN64
+                (unsigned long) (ULONG_PTR) h, what, (unsigned long) GetLastError());
+#else
                 (unsigned long) h, what, (unsigned long) GetLastError());
+#endif
     }
 }
 
@@ -77,7 +81,11 @@ static int read_shape(CURSOR *c, HDC screen, HCURSOR h, CORE_POINTER *p)
     if (cx <= 0 || cy <= 0 || cx > SIDE_MAX || cy > SIDE_MAX ||
         ii.xHotspot >= CORE_POINTER_MAX || ii.yHotspot >= CORE_POINTER_MAX) {
         log_msg(LOG_DEBUG, "cursor: 0x%08lx is %d x %d, hot spot (%lu, %lu): "
+#ifdef _WIN64
+                "the default arrow (rdp-4 9.1)", (unsigned long) (ULONG_PTR) h, cx, cy,
+#else
                 "the default arrow (rdp-4 9.1)", (unsigned long) h, cx, cy,
+#endif
                 (unsigned long) ii.xHotspot, (unsigned long) ii.yHotspot);
         goto done;
     }
@@ -146,7 +154,11 @@ static int read_shape(CURSOR *c, HDC screen, HCURSOR h, CORE_POINTER *p)
     }
     ok = 1;
     log_msg(LOG_DEBUG, "cursor: 0x%08lx: %s, %d x %d, hot spot (%u, %u)",
+#ifdef _WIN64
+            (unsigned long) (ULONG_PTR) h, mono ? "mono" : "color", cx, cy, p->hot_x,
+#else
             (unsigned long) h, mono ? "mono" : "color", cx, cy, p->hot_x,
+#endif
             p->hot_y);
 done:
     free(mask);
@@ -244,14 +256,22 @@ static HCURSOR guess_cursor(HWND w, POINT pt)
         else if (t || b)               { id = IDC_SIZENS;   nm = "size-ns"; }
         if (id != NULL) {
             log_msg(LOG_DEBUG, "cursor: %s over window 0x%08lx border", nm,
+#ifdef _WIN64
+                    (unsigned long) (ULONG_PTR) w);
+#else
                     (unsigned long) w);
+#endif
             return LoadCursorA(NULL, id);
         }
     }
     cpt = pt;
     if (GetClientRect(w, &cr) && ScreenToClient(w, &cpt) && PtInRect(&cr, cpt)) {
         child = ChildWindowFromPoint(w, cpt);
+#ifdef _WIN64
+        h = (HCURSOR) GetClassLongPtrA(child != NULL ? child : w, GCLP_HCURSOR);
+#else
         h = (HCURSOR) GetClassLongA(child != NULL ? child : w, GCL_HCURSOR);
+#endif
     }
     return h != NULL ? h : LoadCursorA(NULL, IDC_ARROW);
 }

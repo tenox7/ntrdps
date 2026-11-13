@@ -184,7 +184,11 @@ void mr_copy(PVOID dst, const VOID *src, ULONG cb)
     BYTE       *d = (BYTE *) dst;
     const BYTE *s = (const BYTE *) src;
 
+#ifdef _WIN64
+    if ((((ULONG_PTR) d | (ULONG_PTR) s) & 3) == 0) {
+#else
     if ((((ULONG) d | (ULONG) s) & 3) == 0) {
+#endif
         for (; cb >= 4; cb -= 4, d += 4, s += 4) {
             *(ULONG *) d = *(const ULONG *) s;
         }
