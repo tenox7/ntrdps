@@ -47,6 +47,13 @@
                     "Good\", and choose it.\nThat undoes the install. " \
                     "Then run this program again and click Remove.\n"
 
+#ifdef WITH_NT50
+#define LKG_TEXT5   "\nIf Windows 2000 does not start after the restart:\n" \
+                    "press F8 at boot and choose \"Last Known Good " \
+                    "Configuration\".\nThat undoes the install. Then run " \
+                    "this program again and click Remove.\n"
+#endif
+
 typedef struct {
     int   id;
     char *name;
@@ -65,6 +72,9 @@ static PACKED g_files[] = {
     { IDF_MRSYS,   "ntrdpsmr.sys", V40 },
     { IDF_MRDLL,   "ntrdpsmr.dll", V40 },
     { IDF_MRDLL0,  "ntrdpsm0.dll", V40 }
+#ifdef WITH_NT50
+    , { IDF_MRDLL5, "ntrdpsm5.dll", V40 }
+#endif
 };
 #define N_FILES (sizeof(g_files) / sizeof(g_files[0]))
 
@@ -72,11 +82,17 @@ static char *g_ours[] = {
     "ntrdps.exe", "ntrdpshk.dll", "ntrdpsly.dll", "ntrdpsmr.sys",
     "ntrdpsmr.dll", "ntrdpsm0.dll", "ntrdps.log", "ntrdps.old", "ntrdps.bak",
     "hk*.dll", "nrd*.tmp"
+#ifdef WITH_NT50
+    , "ntrdpsm5.dll"
+#endif
 };
 #define N_OURS (sizeof(g_ours) / sizeof(g_ours[0]))
 
 static HINSTANCE g_inst;
 static int       g_ver;
+#ifdef WITH_NT50
+static int       g_nt50;
+#endif
 static char      g_dir[MAX_PATH];
 static char      g_log[16384];
 static int       g_restart;
@@ -145,6 +161,12 @@ static int nt_version(void)
     if (major == 4 && minor == 0) {
         return V40;
     }
+#ifdef WITH_NT50
+    if (major == 5 && minor == 0) {
+        g_nt50 = 1;
+        return V40;
+    }
+#endif
     return 0;
 }
 
@@ -1262,7 +1284,11 @@ static void status_text(char *t, int admin)
     char *state = "missing";
 
     if (g_ver == 0) {
+#ifdef WITH_NT50
+        strcpy(t, "This is not Windows NT 3.1, 3.5, 3.51, 4.0 or 2000.");
+#else
         strcpy(t, "This is not Windows NT 3.1, 3.5, 3.51 or 4.0.");
+#endif
         return;
     }
     scm = OpenSCManagerA(NULL, NULL, SC_MANAGER_CONNECT);
@@ -1328,7 +1354,11 @@ static void report(HWND owner, int r, int install)
     strcpy(text, g_log);
     if (r == R_DONE && g_restart) {
         if (install && g_driver) {
+#ifdef WITH_NT50
+            strcat(text, g_nt50 ? LKG_TEXT5 : LKG_TEXT);
+#else
             strcat(text, LKG_TEXT);
+#endif
         }
         strcat(text, "\nRestart Windows NT now?");
         if (MessageBoxA(owner, text, TITLE, MB_YESNO | icon) == IDYES) {
@@ -1646,7 +1676,12 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmd, int show)
     }
     if (install || has_opt(cmd, "remove")) {
         if (g_ver == 0) {
+#ifdef WITH_NT50
+            say("ntrdps runs only on Windows NT 3.1, 3.5, 3.51, 4.0 and "
+                "2000.\n");
+#else
             say("ntrdps runs only on Windows NT 3.1, 3.5, 3.51 and 4.0.\n");
+#endif
             r = R_FAILED;
         } else if (has_key(REMOVED_KEY)) {
             say("ntrdps was removed. Restart Windows NT to finish. Then "

@@ -9,9 +9,19 @@ SETUP_DEFS =
 FILES31    = setup\nt31\ntrdps.exe setup\nt31\ntrdpshk.dll setup\nt31\ntrdpsly.dll
 !ENDIF
 
+NT50_DEFS  =
+FILES50    =
+!IFDEF TLS
+!IF "$(CPU)" == "ALPHA"
+NT50_DEFS  = -DWITH_NT50
+FILES50    = setup\nt50\ntrdpsm5.dll
+!ENDIF
+!ENDIF
+
 FILES = $(FILES31) \
         setup\nt35\ntrdps.exe setup\nt35\ntrdpshk.dll setup\nt35\ntrdpsly.dll \
-        setup\nt40\ntrdpsmr.sys setup\nt40\ntrdpsmr.dll setup\nt40\ntrdpsm0.dll
+        setup\nt40\ntrdpsmr.sys setup\nt40\ntrdpsmr.dll setup\nt40\ntrdpsm0.dll \
+        $(FILES50)
 
 !IFDEF TLS
 SETUP_RCDEFS = -DNTRDPS_LOGIN
@@ -28,10 +38,10 @@ SETUP_RES = setup\setup.res
 all: ntrdpset.exe
 
 setup\setup.obj: setup\setup.c setup\setup.h service\version.h
-	$(CC) $(CFLAGS_MT) $(SETUP_DEFS) -Iservice $(SETUP_INC) -Fosetup\setup.obj setup\setup.c
+	$(CC) $(CFLAGS_MT) $(SETUP_DEFS) $(NT50_DEFS) -Iservice $(SETUP_INC) -Fosetup\setup.obj setup\setup.c
 
 setup\setup.res: setup\setup.rc setup\setup.h $(FILES)
-	rc -r $(SETUP_DEFS) $(SETUP_RCDEFS) -fo setup\setup.res setup\setup.rc
+	rc -r $(SETUP_DEFS) $(NT50_DEFS) $(SETUP_RCDEFS) -fo setup\setup.res setup\setup.rc
 
 setup\setup.rbj: setup\setup.res
 	$(CVTRES) setup\setup.res -o setup\setup.rbj

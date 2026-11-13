@@ -47,6 +47,10 @@ int mirror_noevent(void);
 
 int mirror_swpointer(void);
 
+#ifdef NTRDPS_TLS
+void mirror_fit(void);
+#endif
+
 int mirror_take(RECT *r, int max, unsigned long *flags);
 
 int mirror_flush(MR_FLUSHOUT *f, unsigned long size, unsigned long fl);

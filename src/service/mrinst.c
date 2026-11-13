@@ -15,6 +15,13 @@
 #define MR_SVCKEY   "SYSTEM\\CurrentControlSet\\Services\\" MR_SERVICE
 #define MR_DEVKEY   MR_SVCKEY "\\Device0"
 #define CSD_KEY     "SYSTEM\\CurrentControlSet\\Control\\Windows"
+#ifdef NTRDPS_TLS
+#define MR_DLL5     "ntrdpsm5.dll"
+#define MR_PROFSVC  "SYSTEM\\CurrentControlSet\\Hardware Profiles\\" \
+                    "Current\\System\\CurrentControlSet\\Services\\" \
+                    MR_SERVICE
+#define MR_PROFKEY  MR_PROFSVC "\\Device0"
+#endif
 
 #define LY_DLL      "ntrdpsly.dll"
 #define LY_FILE     "layrdisp.dll"
@@ -230,6 +237,118 @@ static int write_values(void)
     return 1;
 }
 
+#ifdef NTRDPS_TLS
+static LONG set_dwords(const char *key, const char *const *names,
+                       const DWORD *values, unsigned count)
+{
+    HKEY k;
+    DWORD disp;
+    LONG e;
+    unsigned i;
+
+    e = RegCreateKeyExA(HKEY_LOCAL_MACHINE, key, 0, NULL,
+                        REG_OPTION_NON_VOLATILE, KEY_SET_VALUE, NULL, &k,
+                        &disp);
+    if (e != ERROR_SUCCESS) {
+        return e;
+    }
+    for (i = 0; e == ERROR_SUCCESS && i < count; i++) {
+        e = RegSetValueExA(k, names[i], 0, REG_DWORD,
+                           (const BYTE *) &values[i], sizeof(DWORD));
+    }
+    RegCloseKey(k);
+    return e;
+}
+
+static int write_values5(void)
+{
+    static const char drivers[] = MR_SERVICE "\0";
+    static const char *const dev[] = { "VgaCompatible", "MirrorDriver" };
+    static const DWORD devv[] = { 0, 1 };
+    static const char *const prof[] = {
+        "Attach.ToDesktop", "Attach.RelativeX", "Attach.RelativeY",
+        "DefaultSettings.BitsPerPel", "DefaultSettings.XResolution",
+        "DefaultSettings.YResolution", "DefaultSettings.VRefresh",
+        "DefaultSettings.Flags", "DefaultSettings.XPanning",
+        "DefaultSettings.YPanning"
+    };
+    DWORD profv[10];
+    HKEY k;
+    HDC dc;
+    DWORD disp;
+    LONG e;
+
+    dc = CreateDCA("DISPLAY", NULL, NULL, NULL);
+    if (dc == NULL) {
+        mi_error("CreateDC(DISPLAY), for the screen's mode", GetLastError());
+        return 0;
+    }
+    memset(profv, 0, sizeof(profv));
+    profv[0] = 1;
+    profv[3] = (DWORD) (GetDeviceCaps(dc, BITSPIXEL) *
+                        GetDeviceCaps(dc, PLANES));
+    profv[4] = (DWORD) GetDeviceCaps(dc, HORZRES);
+    profv[5] = (DWORD) GetDeviceCaps(dc, VERTRES);
+    DeleteDC(dc);
+    if (profv[3] == 0 || profv[4] == 0 || profv[5] == 0) {
+        printf("ntrdps: cannot read the screen's mode\n");
+        return 0;
+    }
+
+    e = RegCreateKeyExA(HKEY_LOCAL_MACHINE, MR_DEVKEY, 0, NULL,
+                        REG_OPTION_NON_VOLATILE, KEY_SET_VALUE, NULL, &k,
+                        &disp);
+    if (e != ERROR_SUCCESS) {
+        mi_error("creating HKEY_LOCAL_MACHINE\\" MR_DEVKEY, (DWORD) e);
+        return 0;
+    }
+    e = RegSetValueExA(k, "InstalledDisplayDrivers", 0, REG_MULTI_SZ,
+                       (const BYTE *) drivers, sizeof(drivers));
+    if (e == ERROR_SUCCESS) {
+        e = RegSetValueExA(k, "Device Description", 0, REG_SZ,
+                           (const BYTE *) MR_DISPLAY, sizeof(MR_DISPLAY));
+    }
+    RegCloseKey(k);
+    if (e == ERROR_SUCCESS) {
+        e = set_dwords(MR_DEVKEY, dev, devv, 2);
+    }
+    if (e != ERROR_SUCCESS) {
+        mi_error("writing the Device0 values", (DWORD) e);
+        return 0;
+    }
+    printf("ntrdps: wrote the display values in HKEY_LOCAL_MACHINE\\%s\n",
+           MR_DEVKEY);
+    e = set_dwords(MR_PROFKEY, prof, profv, 10);
+    if (e != ERROR_SUCCESS) {
+        mi_error("writing HKEY_LOCAL_MACHINE\\" MR_PROFKEY, (DWORD) e);
+        return 0;
+    }
+    printf("ntrdps: the mirror attaches at boot, %lu x %lu, %lu bits "
+           "(HKEY_LOCAL_MACHINE\\%s)\n", (unsigned long) profv[4],
+           (unsigned long) profv[5], (unsigned long) profv[3], MR_PROFKEY);
+    return 1;
+}
+
+static int remove_profile(void)
+{
+    LONG e;
+
+    e = RegDeleteKeyA(HKEY_LOCAL_MACHINE, MR_PROFKEY);
+    if (e != ERROR_SUCCESS && e != ERROR_FILE_NOT_FOUND) {
+        mi_error("deleting HKEY_LOCAL_MACHINE\\" MR_PROFKEY, (DWORD) e);
+        return 0;
+    }
+    e = RegDeleteKeyA(HKEY_LOCAL_MACHINE, MR_PROFSVC);
+    if (e != ERROR_SUCCESS && e != ERROR_FILE_NOT_FOUND) {
+        mi_error("deleting HKEY_LOCAL_MACHINE\\" MR_PROFSVC, (DWORD) e);
+        return 0;
+    }
+    printf("ntrdps: removed the boot attach (HKEY_LOCAL_MACHINE\\%s)\n",
+           MR_PROFSVC);
+    return 1;
+}
+#endif
+
 int mirror_install(void)
 {
     DWORD v = GetVersion();
@@ -239,11 +358,23 @@ int mirror_install(void)
     UINT n;
 
     const char *src = sp < 3 ? MR_DLL0 : MR_DLL;
+#ifdef NTRDPS_TLS
+    int nt5 = !(v & 0x80000000UL) && major == 5 && minor == 0;
 
+    if (nt5) {
+        src = MR_DLL5;
+    } else
+#endif
     if ((v & 0x80000000UL) || major != 4 || minor != 0) {
+#ifdef NTRDPS_TLS
+        printf("ntrdps: the mirror driver is for Windows NT 4.0 and "
+               "Windows 2000 only.\nThis is version %d.%d. ntrdps reads "
+               "the screen without it.\n", major, minor);
+#else
         printf("ntrdps: the mirror driver is for Windows NT 4.0 only. "
                "This is version\n%d.%d. ntrdps reads the screen without "
                "it.\n", major, minor);
+#endif
         return 1;
     }
     n = GetSystemDirectoryA(sysdir, sizeof(sysdir));
@@ -254,11 +385,27 @@ int mirror_install(void)
     sprintf(drvdir, "%s\\drivers", sysdir);
     if (!copy_file(MR_SYS, drvdir, MR_SYS, "-uninstallmirror") ||
         !copy_file(src, sysdir, MR_DLL, "-uninstallmirror") ||
+#ifdef NTRDPS_TLS
+        !make_service() || !(nt5 ? write_values5() : write_values())) {
+#else
         !make_service() || !write_values()) {
+#endif
         printf("ntrdps: the install is not complete. \"ntrdps "
                "-uninstallmirror\" switches off\nwhat was done.\n");
         return 1;
     }
+#ifdef NTRDPS_TLS
+    if (nt5) {
+        printf("ntrdps: mirror driver installed (Windows 2000, %s).\n"
+               "Restart now: the driver loads only at boot. Until then "
+               "ntrdps reads the\nscreen as before.\n"
+               "If the desktop does not come back after the restart: at "
+               "boot, press F8\nand choose \"Last Known Good "
+               "Configuration\", then run\n\"ntrdps -uninstallmirror\".\n",
+               src);
+        return 0;
+    }
+#endif
     printf("ntrdps: mirror driver installed (Service Pack %d, %s).\n"
            "Reboot now: the driver loads only at boot. Until then ntrdps "
            "reads the\nscreen as before.\n"
@@ -332,6 +479,11 @@ int mirror_uninstall(void)
         mi_error("opening HKEY_LOCAL_MACHINE\\" MR_DEVKEY, (DWORD) e);
         rc = 1;
     }
+#ifdef NTRDPS_TLS
+    if ((GetVersion() & 0x800000FFUL) == 5 && !remove_profile()) {
+        rc = 1;
+    }
+#endif
     if (rc == 0) {
         printf("ntrdps: mirror driver switched off. Reboot to unload it.\n"
                "The files %s (system32\\drivers) and %s (system32) stay;\n"

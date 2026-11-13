@@ -2334,6 +2334,11 @@ static DWORD WINAPI capture_thread(LPVOID arg)
             p->lost = !reformat(p);
             full = 1;
             changed = 1;
+#ifdef NTRDPS_TLS
+            if (p->mirror) {
+                mirror_fit();
+            }
+#endif
         }
         p->mr_ask &= ~(unsigned long) MR_F_MODE;
         cursor_check(screen, d.name);

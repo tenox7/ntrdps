@@ -64,9 +64,115 @@ static int driver_kind(void)
     if (major == 4) {
         return 1;
     }
+#ifdef NTRDPS_TLS
+    if (major == 5 && minor == 0) {
+        return 1;
+    }
+#endif
     return major == 3 && (minor == 10 || minor == 50 || minor == 51) ? 2 :
            0;
 }
+
+#ifdef NTRDPS_TLS
+typedef struct {
+    DWORD cb;
+    CHAR  DeviceName[32];
+    CHAR  DeviceString[128];
+    DWORD StateFlags;
+    CHAR  DeviceID[128];
+    CHAR  DeviceKey[128];
+} NT5_DEVICE;
+typedef BOOL (WINAPI *NT5_ENUMDEV)(LPCSTR, DWORD, NT5_DEVICE *, DWORD);
+typedef BOOL (WINAPI *NT5_ENUMSET)(LPCSTR, DWORD, DEVMODEA *);
+typedef LONG (WINAPI *NT5_CHANGE)(LPCSTR, DEVMODEA *, HWND, DWORD,
+                                  LPVOID);
+#define NT5_CURRENT     ((DWORD) -1)
+#define NT5_FIELDS      0x001C0020UL
+#define NT5_UPDATEREG   0x00000001UL
+
+static int   g_nt5;
+static DWORD g_fitw, g_fith, g_fitb;
+
+static int our_device(NT5_ENUMDEV enumdev, NT5_DEVICE *dd)
+{
+    char key[sizeof(dd->DeviceKey)];
+    DWORD i;
+    int k;
+
+    for (i = 0; i < 64; i++) {
+        memset(dd, 0, sizeof(*dd));
+        dd->cb = sizeof(*dd);
+        if (!enumdev(NULL, i, dd, 0)) {
+            break;
+        }
+        for (k = 0; k < (int) sizeof(key) - 1 && dd->DeviceKey[k]; k++) {
+            key[k] = dd->DeviceKey[k];
+            if (key[k] >= 'a' && key[k] <= 'z') {
+                key[k] = (char) (key[k] - 'a' + 'A');
+            }
+        }
+        key[k] = '\0';
+        if (strstr(key, "\\SERVICES\\NTRDPSMR\\") != NULL) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int fit_mirror(void)
+{
+    HMODULE u;
+    NT5_ENUMDEV enumdev;
+    NT5_ENUMSET enumset;
+    NT5_CHANGE change;
+    NT5_DEVICE dd;
+    DEVMODEA scr, mir;
+    LONG rc;
+
+    u = GetModuleHandleA("user32.dll");
+    if (!g_nt5 || u == NULL) {
+        return 1;
+    }
+    enumdev = (NT5_ENUMDEV) GetProcAddress(u, "EnumDisplayDevicesA");
+    enumset = (NT5_ENUMSET) GetProcAddress(u, "EnumDisplaySettingsA");
+    change = (NT5_CHANGE) GetProcAddress(u, "ChangeDisplaySettingsExA");
+    memset(&scr, 0, sizeof(scr));
+    scr.dmSize = sizeof(scr);
+    memset(&mir, 0, sizeof(mir));
+    mir.dmSize = sizeof(mir);
+    if (enumdev == NULL || enumset == NULL || change == NULL ||
+        !our_device(enumdev, &dd) || !enumset(NULL, NT5_CURRENT, &scr) ||
+        !enumset(dd.DeviceName, NT5_CURRENT, &mir) ||
+        (mir.dmPelsWidth == scr.dmPelsWidth &&
+         mir.dmPelsHeight == scr.dmPelsHeight &&
+         mir.dmBitsPerPel == scr.dmBitsPerPel)) {
+        return 1;
+    }
+    if (scr.dmPelsWidth == g_fitw && scr.dmPelsHeight == g_fith &&
+        scr.dmBitsPerPel == g_fitb) {
+        return 0;
+    }
+    g_fitw = scr.dmPelsWidth;
+    g_fith = scr.dmPelsHeight;
+    g_fitb = scr.dmBitsPerPel;
+    scr.dmOrientation = 0;
+    scr.dmPaperSize = 0;
+    scr.dmPaperLength = 0;
+    scr.dmPaperWidth = 0;
+    scr.dmFields = NT5_FIELDS;
+    rc = change(dd.DeviceName, &scr, NULL, NT5_UPDATEREG, NULL);
+    log_msg(rc == 0 ? LOG_INFO : LOG_WARN, "mirror: the mirror driver has "
+            "%lu x %lu, %lu bpp, the screen %lu x %lu, %lu bpp (Windows "
+            "2000 gives a mirror its saved mode): ChangeDisplaySettingsEx "
+            "on %s gave %ld%s", (unsigned long) mir.dmPelsWidth,
+            (unsigned long) mir.dmPelsHeight,
+            (unsigned long) mir.dmBitsPerPel, (unsigned long) g_fitw,
+            (unsigned long) g_fith, (unsigned long) g_fitb, dd.DeviceName,
+            (long) rc, rc == 0 ? " (ok: the mirror now has the screen's "
+            "mode)" : "; polling");
+    return rc == 0;
+}
+#endif
 
 int mirror_open(void)
 {
@@ -92,8 +198,14 @@ int mirror_open(void)
             log_msg(LOG_INFO, "mirror: no layered driver (ntrdps "
                     "-installlayer installs it on NT 3.1, 3.5 and 3.51)");
         } else {
+#ifdef NTRDPS_TLS
+            log_msg(LOG_INFO, "mirror: no mirror driver (ntrdps "
+                    "-installmirror installs it on NT 4.0 and Windows "
+                    "2000)");
+#else
             log_msg(LOG_INFO, "mirror: no mirror driver (ntrdps "
                     "-installmirror installs it on NT 4.0)");
+#endif
         }
         close_handles();
         return 0;
@@ -128,10 +240,23 @@ int mirror_open(void)
             (g_out.diag & MR_D_LAYER) ? "layered" : "mirror",
             (long) g_out.cx, (long) g_out.cy, (unsigned long) g_out.bpp,
             (unsigned long) g_out.engine, (unsigned long) g_out.diag,
+#ifdef NTRDPS_TLS
+            g_noevent ? "; no event (NT 4.0 before SP3, Windows 2000): "
+                        "asked every tick" : "",
+#else
             g_noevent ? "; no event (NT 4.0 before SP3): asked every tick"
                       : "",
+#endif
             g_swpointer ? "; GDI draws the pointer into the picture"
                         : "");
+#ifdef NTRDPS_TLS
+    g_nt5 = (GetVersion() & 0x800000FFUL) == 5;
+    g_fitw = g_fith = g_fitb = 0;
+    if (!fit_mirror()) {
+        mirror_close();
+        return 0;
+    }
+#endif
     return 1;
 }
 
@@ -149,6 +274,15 @@ int mirror_swpointer(void)
 {
     return g_event != NULL && g_swpointer;
 }
+
+#ifdef NTRDPS_TLS
+void mirror_fit(void)
+{
+    if (g_event != NULL && !fit_mirror()) {
+        mirror_close();
+    }
+}
+#endif
 
 int mirror_layered(void)
 {
@@ -174,6 +308,10 @@ int mirror_take(RECT *r, int max, unsigned long *flags)
     copy_counts();
 #ifdef NTRDPS_TLS
     g_swpointer = (g_out.diag & MR_D_SWPOINTER) != 0;
+    if ((g_out.flags & MR_F_MODE) != 0 && !fit_mirror()) {
+        mirror_close();
+        return -1;
+    }
 #endif
     *flags = g_out.flags;
     n = g_out.nrects;
@@ -401,6 +539,10 @@ int mirror_flush(MR_FLUSHOUT *f, unsigned long size, unsigned long fl)
     copy_counts();
 #ifdef NTRDPS_TLS
     g_swpointer = (g_out.diag & MR_D_SWPOINTER) != 0;
+    if ((f->head.flags & MR_F_MODE) != 0 && !fit_mirror()) {
+        mirror_close();
+        return -1;
+    }
 #endif
     g_st.skipped = f->skipped;
     g_st.saves = f->saves;

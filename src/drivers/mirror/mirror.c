@@ -7,12 +7,23 @@
 #include <wingdi.h>
 #include <winddi.h>
 
+#ifdef MR_NT5
+#ifndef GCAPS_LAYERED
+#define GCAPS_LAYERED 0x08000000
+#endif
+#else
 #include "sp3ddi.h"
+#endif
 #include "shadow.h"
+
+#if defined(MR_RTM) || defined(MR_NT5)
+#define MR_NOEV
+#endif
 
 #define MR_DDI_RTM      0x00020000L
 #define MR_DDI_SP3      0x00020003L
 #define MR_DDI_NT5      0x00030000L
+#define MR_DDI_XP       0x00030100L
 
 #define MR_TAG          0x724D524EL
 
@@ -24,12 +35,12 @@
 static ULONG            g_pal[256];
 
 static HDRVOBJ          g_hdo;
-#ifndef MR_RTM
+#ifndef MR_NOEV
 static PEVENT volatile  g_event;
 static volatile LONG    g_inuse;
 #endif
 
-#ifndef MR_RTM
+#ifndef MR_NOEV
 #ifdef _X86_
 static void mr_inuse_inc(void)
 {
@@ -129,7 +140,7 @@ MR_PDEV *mr_target(SURFOBJ *pso)
     return mr_find((PVOID) pso->dhsurf);
 }
 
-#ifdef MR_RTM
+#ifdef MR_NOEV
 
 VOID mr_signal(VOID)
 {
@@ -771,8 +782,10 @@ static ULONG APIENTRY mrEscape(SURFOBJ *pso, ULONG iEsc, ULONG cjIn,
     } else {
         ppdev = g_cur;
     }
-#ifdef MR_RTM
+#ifdef MR_NOEV
     diag |= MR_D_NOEVENT;
+#endif
+#ifdef MR_RTM
     diag |= MR_D_SWPOINTER;
 #endif
     return mr_escape(ppdev, hdev, diag, (MR_IN *) pvIn, cjOut, pvOut);
@@ -805,7 +818,11 @@ static const DRVFN g_fns[] = {
 BOOL APIENTRY DrvEnableDriver(ULONG iEngineVersion, ULONG cj,
                               DRVENABLEDATA *pded)
 {
-#ifdef MR_RTM
+#if defined(MR_NT5)
+    if (iEngineVersion < MR_DDI_NT5 || iEngineVersion >= MR_DDI_XP) {
+        return FALSE;
+    }
+#elif defined(MR_RTM)
     if (iEngineVersion < MR_DDI_RTM || iEngineVersion >= MR_DDI_NT5) {
         return FALSE;
     }
@@ -817,7 +834,7 @@ BOOL APIENTRY DrvEnableDriver(ULONG iEngineVersion, ULONG cj,
     if (pded == NULL || cj < sizeof(DRVENABLEDATA)) {
         return FALSE;
     }
-#if !defined(MR_RTM) && !defined(_X86_)
+#if !defined(MR_NOEV) && !defined(_X86_)
     if (g_sem == NULL) {
         g_sem = EngCreateSemaphore();
         if (g_sem == NULL) {
@@ -826,7 +843,7 @@ BOOL APIENTRY DrvEnableDriver(ULONG iEngineVersion, ULONG cj,
     }
 #endif
     g_engine = iEngineVersion;
-#ifdef MR_RTM
+#ifdef MR_NOEV
     pded->iDriverVersion = MR_DDI_RTM;
 #else
     pded->iDriverVersion = MR_DDI_SP3;

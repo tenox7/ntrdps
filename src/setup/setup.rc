@@ -19,6 +19,9 @@ IDF_LAYER35 NTRDPSFILE  "setup\\nt35\\ntrdpsly.dll"
 IDF_MRSYS   NTRDPSFILE  "setup\\nt40\\ntrdpsmr.sys"
 IDF_MRDLL   NTRDPSFILE  "setup\\nt40\\ntrdpsmr.dll"
 IDF_MRDLL0  NTRDPSFILE  "setup\\nt40\\ntrdpsm0.dll"
+#ifdef WITH_NT50
+IDF_MRDLL5  NTRDPSFILE  "setup\\nt50\\ntrdpsm5.dll"
+#endif
 
 #ifdef NTRDPS_LOGIN
 IDD_SETUP DIALOG 0, 0, 268, 152

@@ -29,5 +29,6 @@
 #define IDF_MRSYS       221
 #define IDF_MRDLL       222
 #define IDF_MRDLL0      223
+#define IDF_MRDLL5      224
 
 #endif
