@@ -2,6 +2,8 @@
 
 A Remote Desktop (RDP) Server for Windows NT 3.1, 3.5, 3.51 and 4.0, pre-TSE Hydra and pre-WinFrame. RDP client connects to `WinSta0`, or the local console. No WTS, no MultiWin.
 
+It also runs on Windows 2000 for Alpha: the 32-bit RC2, and the 64-bit build 2210 with its own installer `ntrdpset-axp64.exe`.
+
 Yes you can Remote Desktop to NT 3.1...
 
 ![Windows NT 3.1 on Alpha over RDP](screenshot.png)
