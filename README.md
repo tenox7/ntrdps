@@ -53,6 +53,9 @@ A: 4.0 / 5.x
 Q: How do I turn off compression
 A: Set `HKLM\SOFTWARE\ntrdps\Compression` (REG_DWORD) to 0, then `net stop ntrdps` and `net start ntrdps`. It saves CPU on the NT machine but sends more over the network.
 
+Q: Does it handle multi-user/multi-session/multi-win
+A: No, just the local console only
+
 ## License
 
 MIT
