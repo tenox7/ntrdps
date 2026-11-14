@@ -4,6 +4,6 @@
 #ifndef NTRDPS_VERSION_H
 #define NTRDPS_VERSION_H
 
-#define NTRDPS_VERSION "0.7"
+#define NTRDPS_VERSION "0.8"
 
 #endif

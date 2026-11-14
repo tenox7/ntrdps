@@ -2478,6 +2478,20 @@ static void test_timeout(void)
     CHECK_EQ(g_s.ending, END_NO);
     rdp_check_time(&g_s, 0x00001711UL);
     CHECK_EQ(g_s.ending, END_FLUSH);
+#ifdef NTRDPS_TLS
+
+    reset();
+    g_s.want_tls = 1;
+    t0 = g_s.phase_ms;
+    rdp_check_time(&g_s, t0 + RDP_HANDSHAKE_MS + 1);
+    CHECK_EQ(g_s.ending, END_NO);
+    rdp_check_time(&g_s, t0 + RDP_HANDSHAKE_TLS_MS);
+    CHECK_EQ(g_s.ending, END_NO);
+    rdp_check_time(&g_s, t0 + RDP_HANDSHAKE_TLS_MS + 1);
+    CHECK_EQ(g_s.ending, END_FLUSH);
+    CHECK(strstr(g_s.why, "no complete handshake within 60 s "
+                 "(state WAIT_CR)") != NULL);
+#endif
 }
 
 static unsigned char g_ord[8192];

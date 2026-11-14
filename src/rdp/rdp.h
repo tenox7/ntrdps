@@ -48,6 +48,9 @@ void rdp_end(SESSION *s, unsigned long errinfo, const char *why);
 void rdp_service_stop(SESSION *s);
 
 #define RDP_HANDSHAKE_MS 10000
+#ifdef NTRDPS_TLS
+#define RDP_HANDSHAKE_TLS_MS 60000
+#endif
 void rdp_check_time(SESSION *s, DWORD now);
 
 const char *rdp_state_name(int state);

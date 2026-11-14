@@ -539,17 +539,31 @@ void rdp_service_stop(SESSION *s)
 void rdp_check_time(SESSION *s, DWORD now)
 {
     char why[80];
+#ifdef NTRDPS_TLS
+    DWORD limit;
+#endif
 
 #ifdef NTRDPS_LOGIN
     if (s->login != NULL) {
         login_check_time(s, now);
     }
 #endif
+#ifdef NTRDPS_TLS
+    limit = (s->want_tls || s->tls != NULL) ? RDP_HANDSHAKE_TLS_MS
+                                            : RDP_HANDSHAKE_MS;
+    if (s->ending != END_NO || s->state == ST_ACTIVE ||
+        now - s->phase_ms <= limit) {
+        return;
+    }
+    sprintf(why, "no complete handshake within %lu s (state %s)",
+            (unsigned long) (limit / 1000), rdp_state_name(s->state));
+#else
     if (s->ending != END_NO || s->state == ST_ACTIVE ||
         now - s->phase_ms <= RDP_HANDSHAKE_MS) {
         return;
     }
     sprintf(why, "no complete handshake within %d s (state %s)",
             RDP_HANDSHAKE_MS / 1000, rdp_state_name(s->state));
+#endif
     rdp_end(s, 0, why);
 }
